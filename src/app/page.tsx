@@ -10,10 +10,10 @@ import { Suspense } from 'react'
 const ThreeScene = dynamic(() => import('@/components/Thrlex'), {
   ssr: false,
   loading: () => (
-    <div className="flex h-screen w-full items-center justify-center bg-gray-900 text-white">
+    <div className="flex h-screen w-full items-center justify-center bg-gray-100 text-white">
       <div className="flex flex-col items-center gap-4">
-        <div className="text-xl font-bold">Loading 3D Scene...</div>
-        <div className="text-sm text-gray-400">Initializing Three.js components</div>
+        <div className="text-xl font-bold text-slate-900">Loading&hellip;</div>
+        <div className="text-sm text-slate-600  ">Initializing Three.js components</div>
       </div>
     </div>
   ),
