@@ -4,11 +4,13 @@ import { Canvas } from '@react-three/fiber';
 import { Environment, OrbitControls } from '@react-three/drei';
 import { useEffect, useRef } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Mesh, Vector3 } from 'three';
+import { Euler, Mesh, Vector3 } from 'three';
 import { SPHERE_RADIUS } from '@/game/constants';
 import {
+  centerQuarterCurve,
   quarterCurve,
   QuarterTurn,
+  rotateBezierCurve,
   Straightaway,
   straightCurve,
   translateCurve,
@@ -22,6 +24,8 @@ const Game = () => {
   const currentCurve = useStore((state) => state.currentCurve);
   const setCurveProgress = useStore((state) => state.setCurveProgress);
   const setCurrentTile = useStore((state) => state.setCurrentTile);
+  const debug = useStore((state) => state.debug);
+  const currentTile = useStore((state) => state.currentTile);
   const level = useStore((state) => state.level);
 
   // Start game :(
@@ -31,15 +35,16 @@ const Game = () => {
   }, [setCurrentCurve]);
 
   useFrame((state, delta) => {
-    if (meshRef.current && currentCurve) {
+    if (meshRef.current && currentCurve && currentTile) {
       const progress = Math.min(
-        useStore.getState().curveProgress + delta * 1.1,
+        useStore.getState().curveProgress +
+          delta * (currentTile.type === 'straight' ? 2.0 : 1.8),
         1.0,
       );
       setCurveProgress(progress);
 
       // Get the point along the curve
-      const point = currentCurve.getPoint(progress);
+      const point = currentCurve.getPointAt(progress);
 
       // Update the sphere's position
       meshRef.current.position.copy(point);
@@ -55,10 +60,20 @@ const Game = () => {
           // Set the next curve
           setCurrentCurve(
             translateCurve(
-              nextTile.type === 'straight' ? straightCurve : quarterCurve,
+              rotateBezierCurve(
+                nextTile.type === 'straight'
+                  ? straightCurve
+                  : centerQuarterCurve,
+                new Euler(
+                  nextTile.rotation[0],
+                  nextTile.rotation[1],
+                  nextTile.rotation[2],
+                ),
+                new Vector3(0, 0.5, 0),
+              ),
               new Vector3(
                 nextTile.position[0],
-                nextTile.position[1],
+                nextTile.position[1] - 0.5,
                 nextTile.position[2],
               ),
             ),
@@ -90,26 +105,17 @@ const Game = () => {
       </mesh>
       {level.map((tile) => {
         if (tile.type === 'straight') {
-          return (
-            <Straightaway
-              key={tile.id}
-              position={tile.position}
-              rotation={tile.rotation}
-            />
-          );
+          return <Straightaway key={tile.id} tile={tile} />;
         } else if (tile.type === 'quarter') {
-          return (
-            <QuarterTurn
-              key={tile.id}
-              position={tile.position}
-              rotation={tile.rotation}
-            />
-          );
+          return <QuarterTurn key={tile.id} tile={tile} />;
         }
       })}
-      {/* <Straightaway /> */}
-      {/* <QuarterTurn position={[0, 1, 0]} /> */}
-      {/* <Straightaway position={[1, 1, 0]} rotation={[0, 0, Math.PI / 2]} /> */}
+      {debug && currentTile && (
+        <mesh position={currentTile.position}>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color="red" opacity={0.5} transparent />
+        </mesh>
+      )}
       <OrbitControls />
     </group>
   );

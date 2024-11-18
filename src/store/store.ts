@@ -5,7 +5,8 @@ export type Tile = {
   id: string;
   type: 'straight' | 'quarter';
   position: [number, number, number];
-  rotation?: [number, number, number];
+  rotation: [number, number, number];
+  showSides: 'all' | 'left' | 'right' | 'front' | 'back';
   next: string[];
 };
 
@@ -16,19 +17,24 @@ export const level: Tile[] = [
     id: '1',
     type: 'straight',
     position: [0, 0, 0],
+    rotation: [0, 0, 0],
+    showSides: 'all',
     next: ['2'],
   },
   {
     id: '2',
     type: 'quarter',
     position: [0, 1, 0],
+    rotation: [0, 0, 0],
+    showSides: 'all',
     next: ['3'],
   },
   {
     id: '3',
     type: 'straight',
     position: [1, 1, 0],
-    rotation: [0, 0, Math.PI / 2],
+    rotation: [0, 0, -Math.PI / 2],
+    showSides: 'all',
     next: ['4'],
   },
   {
@@ -36,13 +42,15 @@ export const level: Tile[] = [
     type: 'quarter',
     position: [2, 1, 0],
     rotation: [0, 0, -Math.PI / 2],
+    showSides: 'all',
     next: ['5'],
   },
   {
     id: '5',
     type: 'straight',
     position: [2, 0, 0],
-    rotation: [0, 0, 0],
+    rotation: [0, 0, Math.PI],
+    showSides: 'all',
     next: ['6'],
   },
   {
@@ -50,6 +58,7 @@ export const level: Tile[] = [
     type: 'quarter',
     position: [2, -1, 0],
     rotation: [0, 0, Math.PI],
+    showSides: 'all',
     next: ['7'],
   },
   {
@@ -57,6 +66,7 @@ export const level: Tile[] = [
     type: 'straight',
     position: [1, -1, 0],
     rotation: [0, 0, Math.PI / 2],
+    showSides: 'all',
     next: ['8'],
   },
   {
@@ -64,6 +74,7 @@ export const level: Tile[] = [
     type: 'quarter',
     position: [0, -1, 0],
     rotation: [0, 0, Math.PI / 2],
+    showSides: 'all',
     next: ['1'],
   },
 ];
