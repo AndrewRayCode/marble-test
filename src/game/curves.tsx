@@ -4,6 +4,14 @@ import { CatmullRomCurve3, CubicBezierCurve3, Vector3 } from 'three';
 import { INITIAL_SPHERE_RADIUS, RAIL_RADIUS } from './constants';
 import { pointAroundCircle } from '@/util/math';
 
+export const translateCurve = (curve: CubicBezierCurve3, position: Vector3) =>
+  new CubicBezierCurve3(
+    position.clone().add(curve.v0),
+    position.clone().add(curve.v1),
+    position.clone().add(curve.v2),
+    position.clone().add(curve.v3),
+  );
+
 export const useCurve = (curve: CubicBezierCurve3) => {
   return useMemo(() => {
     const points = curve.getPoints(5);
@@ -22,7 +30,7 @@ const QUARTER_TURN_HANDLE_LENGTH = QUARTER_TURN_RADIUS * 0.551915024494; // Magi
 const QUARTER_CORRECTION = 0.08;
 
 // Create three curves that form a quarter circle
-const quarterCurve = new CubicBezierCurve3(
+export const quarterCurve = new CubicBezierCurve3(
   new Vector3(0, 0, 0), // Start at origin
   new Vector3(-QUARTER_CORRECTION, QUARTER_TURN_HANDLE_LENGTH, 0), // Control point 1
   new Vector3(

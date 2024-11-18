@@ -1,10 +1,7 @@
-'use client'
+'use client';
 
-import * as React from 'react';
-console.log('rv', React.version)
-
-import dynamic from 'next/dynamic'
-import { Suspense } from 'react'
+import dynamic from 'next/dynamic';
+import { Suspense } from 'react';
 
 // Dynamically import the ThreeScene component to avoid SSR issues
 const ThreeScene = dynamic(() => import('@/components/Thrlex'), {
@@ -13,11 +10,13 @@ const ThreeScene = dynamic(() => import('@/components/Thrlex'), {
     <div className="flex h-screen w-full items-center justify-center bg-gray-100 text-white">
       <div className="flex flex-col items-center gap-4">
         <div className="text-xl font-bold text-slate-900">Loading&hellip;</div>
-        <div className="text-sm text-slate-600  ">Initializing Three.js components</div>
+        <div className="text-sm text-slate-600  ">
+          Initializing Three.js components
+        </div>
       </div>
     </div>
   ),
-})
+});
 
 export default function Home() {
   return (
@@ -26,7 +25,7 @@ export default function Home() {
         <ThreeScene />
       </Suspense>
     </main>
-  )
+  );
 }
 
 // Metadata for the page
