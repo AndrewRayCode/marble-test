@@ -1,14 +1,21 @@
 import { ChoiceTile, RailTile, useStore } from '@/store/store';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CatmullRomCurve3,
   CubicBezierCurve3,
   Euler,
+  Group,
   Matrix4,
   Vector3,
 } from 'three';
-import { INITIAL_SPHERE_RADIUS, RAIL_RADIUS } from './constants';
+import {
+  INITIAL_SPHERE_RADIUS,
+  RAIL_RADIUS,
+  TILE_HALF_WIDTH,
+} from './constants';
 import { pointAroundCircle } from '@/util/math';
+import { useFrame } from '@react-three/fiber';
+import { Html } from '@react-three/drei';
 
 export const translateCurve = (curve: CubicBezierCurve3, position: Vector3) =>
   new CubicBezierCurve3(
@@ -66,9 +73,13 @@ export const curveForRailTile = (tile: RailTile) =>
     rotateBezierCurve(
       tile.type === 'straight' ? straightCurve : centerQuarterCurve,
       new Euler(tile.rotation[0], tile.rotation[1], tile.rotation[2]),
-      new Vector3(0, 0.5, 0),
+      new Vector3(0, TILE_HALF_WIDTH, 0),
     ),
-    new Vector3(tile.position[0], tile.position[1] - 0.5, tile.position[2]),
+    new Vector3(
+      tile.position[0],
+      tile.position[1] - TILE_HALF_WIDTH,
+      tile.position[2],
+    ),
   );
 
 export const curveForChoiceTile = (tile: ChoiceTile, entrance: number) =>
@@ -76,20 +87,24 @@ export const curveForChoiceTile = (tile: ChoiceTile, entrance: number) =>
     rotateBezierCurve(
       tile.type === 't' ? tStraights[entrance] : tStraights[entrance],
       new Euler(tile.rotation[0], tile.rotation[1], tile.rotation[2]),
-      new Vector3(0, 0.5, 0),
+      new Vector3(0, TILE_HALF_WIDTH, 0),
     ),
-    new Vector3(tile.position[0], tile.position[1] - 0.5, tile.position[2]),
+    new Vector3(
+      tile.position[0],
+      tile.position[1] - TILE_HALF_WIDTH,
+      tile.position[2],
+    ),
   );
 
 const pointAt45 = pointAroundCircle(45, INITIAL_SPHERE_RADIUS);
 
-const distanceFromEdge = INITIAL_SPHERE_RADIUS - pointAt45.x;
+const distanceFromEdge = TILE_HALF_WIDTH - pointAt45.x;
 
 // Constants for curve creation
 const QUARTER_TURN_RADIUS = 1 - distanceFromEdge;
 const QUARTER_TURN_HANDLE_LENGTH = QUARTER_TURN_RADIUS * 0.551915024494; // Magic number for approximating a circle with cubic Beziers
 
-const QUARTER_CORRECTION = 0.08;
+const QUARTER_CORRECTION = 0.08 * INITIAL_SPHERE_RADIUS;
 
 // Create three curves that form a quarter circle
 export const quarterCurve = new CubicBezierCurve3(
@@ -108,7 +123,7 @@ const SMALL_QUARTER_TURN_RADIUS = distanceFromEdge;
 const SMALL_QUARTER_TURN_HANDLE_LENGTH =
   SMALL_QUARTER_TURN_RADIUS * 0.551915024494; // Magic number for approximating a circle with cubic Beziers
 
-const SMALL_QUARTER_CORRECTION = 0.014;
+const SMALL_QUARTER_CORRECTION = 0.014 * INITIAL_SPHERE_RADIUS;
 
 // Create three curves that form a SMALL_quarter circle
 const innerQuarterCurve = new CubicBezierCurve3(
@@ -122,11 +137,11 @@ const innerQuarterCurve = new CubicBezierCurve3(
   new Vector3(SMALL_QUARTER_TURN_RADIUS, SMALL_QUARTER_TURN_RADIUS, 0), // End point
 );
 
-const CENTER_QUARTER_TURN_RADIUS = 0.5;
+const CENTER_QUARTER_TURN_RADIUS = TILE_HALF_WIDTH;
 const CENTER_QUARTER_TURN_HANDLE_LENGTH =
   CENTER_QUARTER_TURN_RADIUS * 0.551915024494; // Magic number for approximating a circle with cubic Beziers
 
-const CENTER_QUARTER_CORRECTION = 0.008;
+const CENTER_QUARTER_CORRECTION = 0.008 * INITIAL_SPHERE_RADIUS;
 
 export const centerQuarterCurve = new CubicBezierCurve3(
   new Vector3(0, 0, 0), // Start at origin
@@ -157,24 +172,24 @@ export const reverseBezierCurve = (curve: CubicBezierCurve3) =>
 export const tStraights = [
   // Left arm of T
   new CubicBezierCurve3(
-    new Vector3(-0.5, 0.5, 0),
-    new Vector3(-0.5, 0.5, 0),
-    new Vector3(0, 0.5, 0),
-    new Vector3(0, 0.5, 0),
+    new Vector3(-TILE_HALF_WIDTH, TILE_HALF_WIDTH, 0),
+    new Vector3(-TILE_HALF_WIDTH, TILE_HALF_WIDTH, 0),
+    new Vector3(0, TILE_HALF_WIDTH, 0),
+    new Vector3(0, TILE_HALF_WIDTH, 0),
   ),
   // Bottom of T
   new CubicBezierCurve3(
     new Vector3(0, 0, 0),
     new Vector3(0, 0, 0),
-    new Vector3(0, 0.5, 0),
-    new Vector3(0, 0.5, 0),
+    new Vector3(0, TILE_HALF_WIDTH, 0),
+    new Vector3(0, TILE_HALF_WIDTH, 0),
   ),
   // Right arm of T
   new CubicBezierCurve3(
-    new Vector3(0.5, 0.5, 0),
-    new Vector3(0.5, 0.5, 0),
-    new Vector3(0, 0.5, 0),
-    new Vector3(0, 0.5, 0),
+    new Vector3(TILE_HALF_WIDTH, TILE_HALF_WIDTH, 0),
+    new Vector3(TILE_HALF_WIDTH, TILE_HALF_WIDTH, 0),
+    new Vector3(0, TILE_HALF_WIDTH, 0),
+    new Vector3(0, TILE_HALF_WIDTH, 0),
   ),
 ];
 
@@ -198,7 +213,7 @@ export const Straightaway = ({ tile }: { tile: RailTile }) => {
       )}
       {/* front right */}
       {['all', 'right', 'front'].includes(showSides) ? (
-        <mesh position={[pointAt45.x, -0.5, pointAt45.y]}>
+        <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
           <tubeGeometry args={[c1, 70, 0.02, 50, false]} />
           <meshStandardMaterial
             roughness={0}
@@ -209,7 +224,7 @@ export const Straightaway = ({ tile }: { tile: RailTile }) => {
       ) : null}
       {/* front left */}
       {['all', 'front', 'left'].includes(showSides) ? (
-        <mesh position={[-pointAt45.x, -0.5, pointAt45.y]}>
+        <mesh position={[-pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
           <tubeGeometry args={[c1, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
             roughness={0}
@@ -220,7 +235,7 @@ export const Straightaway = ({ tile }: { tile: RailTile }) => {
       ) : null}
       {/* back right */}
       {['all', 'right', 'back'].includes(showSides) ? (
-        <mesh position={[pointAt45.x, -0.5, -pointAt45.y]}>
+        <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}>
           <tubeGeometry args={[c1, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
             roughness={0}
@@ -231,7 +246,7 @@ export const Straightaway = ({ tile }: { tile: RailTile }) => {
       ) : null}
       {/* back left */}
       {['all', 'left', 'back'].includes(showSides) ? (
-        <mesh position={[-pointAt45.x, -0.5, -pointAt45.y]}>
+        <mesh position={[-pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}>
           <tubeGeometry args={[c1, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
             roughness={0}
@@ -289,7 +304,7 @@ export const QuarterTurn = ({ tile }: { tile: RailTile }) => {
       {debug && (
         <DebugCurveHandles
           curve={quarterCurve}
-          position={[-pointAt45.x, -0.5, pointAt45.y]}
+          position={[-pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}
         />
       )}
       {debug && (
@@ -300,7 +315,7 @@ export const QuarterTurn = ({ tile }: { tile: RailTile }) => {
       )}
       {/* front right */}
       {['all', 'right', 'front'].includes(showSides) ? (
-        <mesh position={[pointAt45.x, -0.5, pointAt45.y]}>
+        <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
           <tubeGeometry args={[c2, 70, 0.02, 50, false]} />
           <meshStandardMaterial
             roughness={0}
@@ -311,7 +326,7 @@ export const QuarterTurn = ({ tile }: { tile: RailTile }) => {
       ) : null}
       {/* front left */}
       {['all', 'front', 'left'].includes(showSides) ? (
-        <mesh position={[-pointAt45.x, -0.5, pointAt45.y]}>
+        <mesh position={[-pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
           <tubeGeometry args={[c1, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
             roughness={0}
@@ -322,7 +337,7 @@ export const QuarterTurn = ({ tile }: { tile: RailTile }) => {
       ) : null}
       {/* back right */}
       {['all', 'right', 'back'].includes(showSides) ? (
-        <mesh position={[pointAt45.x, -0.5, -pointAt45.y]}>
+        <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}>
           <tubeGeometry args={[c2, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
             roughness={0}
@@ -333,7 +348,7 @@ export const QuarterTurn = ({ tile }: { tile: RailTile }) => {
       ) : null}
       {/* back left */}
       {['all', 'left', 'back'].includes(showSides) ? (
-        <mesh position={[-pointAt45.x, -0.5, -pointAt45.y]}>
+        <mesh position={[-pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}>
           <tubeGeometry args={[c1, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
             roughness={0}
@@ -351,14 +366,42 @@ export const Junction = ({ tile }: { tile: ChoiceTile }) => {
   const str8 = useCurve(straightCurve);
   const small = useCurve(innerQuarterCurve);
   const debug = useStore((state) => state.debug);
+  const setCurrentExitRefs = useStore((state) => state.setCurrentExitRefs);
+  const currentTile = useStore((state) => state.currentTile);
+
+  const exits = useMemo(
+    () =>
+      tStraights.map((c) =>
+        c.getPointAt(0).sub(new Vector3(0, TILE_HALF_WIDTH, 0)),
+      ),
+    [],
+  );
+  const exitRefs = useRef<Group[]>([]);
 
   // With a camera at the positive 6 position:
   // -x is left, +x is right
   // -y is down, +y is up
   // -z is towards the camera, +z is away from the camera
 
+  useEffect(() => {
+    if (exitRefs.current && currentTile?.id === tile.id) {
+      setCurrentExitRefs(exitRefs.current);
+    }
+  }, [currentTile, tile, setCurrentExitRefs]);
+
   return (
     <group position={position} rotation={rotation}>
+      {exits.map((exit, i) => (
+        <group
+          key={i}
+          position={exit}
+          ref={(elem) => {
+            if (elem) {
+              exitRefs.current[i] = elem;
+            }
+          }}
+        ></group>
+      ))}
       {debug && (
         <mesh>
           <boxGeometry args={[1, 1, 1]} />
@@ -367,7 +410,7 @@ export const Junction = ({ tile }: { tile: ChoiceTile }) => {
       )}
       {/* front right */}
       {['all', 'right', 'front'].includes(showSides) ? (
-        <mesh position={[pointAt45.x, -0.5, pointAt45.y]}>
+        <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
           <tubeGeometry args={[small, 70, 0.02, 50, false]} />
           <meshStandardMaterial
             roughness={0}
@@ -379,7 +422,7 @@ export const Junction = ({ tile }: { tile: ChoiceTile }) => {
       {/* front left */}
       {['all', 'front'].includes(showSides) ? (
         <mesh
-          position={[-pointAt45.x, -0.5, pointAt45.y]}
+          position={[-pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}
           rotation={[0, Math.PI, 0]}
         >
           <tubeGeometry args={[small, 70, RAIL_RADIUS, 50, false]} />
@@ -392,7 +435,7 @@ export const Junction = ({ tile }: { tile: ChoiceTile }) => {
       ) : null}
       {/* back right */}
       {['all', 'back'].includes(showSides) ? (
-        <mesh position={[pointAt45.x, -0.5, -pointAt45.y]}>
+        <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}>
           <tubeGeometry args={[small, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
             roughness={0}
@@ -404,7 +447,7 @@ export const Junction = ({ tile }: { tile: ChoiceTile }) => {
       {/* back left */}
       {['all', 'back'].includes(showSides) ? (
         <mesh
-          position={[-pointAt45.x, -0.5, -pointAt45.y]}
+          position={[-pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}
           rotation={[0, Math.PI, 0]}
         >
           <tubeGeometry args={[small, 70, RAIL_RADIUS, 50, false]} />
@@ -418,7 +461,7 @@ export const Junction = ({ tile }: { tile: ChoiceTile }) => {
       {/* top back */}
       {['all', 'back'].includes(showSides) ? (
         <mesh
-          position={[-0.5, pointAt45.y, -pointAt45.y]}
+          position={[-TILE_HALF_WIDTH, pointAt45.y, -pointAt45.y]}
           rotation={[0, 0, -Math.PI / 2]}
         >
           <tubeGeometry args={[str8, 70, RAIL_RADIUS, 50, false]} />
@@ -432,7 +475,7 @@ export const Junction = ({ tile }: { tile: ChoiceTile }) => {
       {/* top front */}
       {['all', 'front'].includes(showSides) ? (
         <mesh
-          position={[-0.5, pointAt45.y, pointAt45.y]}
+          position={[-TILE_HALF_WIDTH, pointAt45.y, pointAt45.y]}
           rotation={[0, 0, -Math.PI / 2]}
         >
           <tubeGeometry args={[str8, 70, RAIL_RADIUS, 50, false]} />

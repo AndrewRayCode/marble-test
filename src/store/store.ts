@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { CubicBezierCurve3 } from 'three';
+import { CubicBezierCurve3, Group, Vector3 } from 'three';
 import { create } from 'zustand';
 
 export type RailTile = {
@@ -187,6 +187,11 @@ export interface Store {
   setEnteredFrom: (entrance: number) => void;
   nextConnection: number | null;
   setNextConnection: (entrance: number | null) => void;
+  currentExitRefs: Group[];
+  setCurrentExitRefs: (currentExitRefs: Group[]) => void;
+
+  arrowPositions: Vector3[];
+  setArrowPositions: (positions: Vector3[]) => void;
 
   resetLevel: (leveL: Level) => void;
 }
@@ -239,6 +244,12 @@ export const useStore = create<Store>((set) => ({
 
   nextConnection: -1,
   setNextConnection: (nextConnection) => set({ nextConnection }),
+
+  currentExitRefs: [],
+  setCurrentExitRefs: (currentExitRefs) => set({ currentExitRefs }),
+
+  arrowPositions: [],
+  setArrowPositions: (arrowPositions) => set({ arrowPositions }),
 
   resetLevel: (level) =>
     set({

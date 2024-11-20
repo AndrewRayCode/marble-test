@@ -1,10 +1,10 @@
 'use client';
 
-import { Canvas } from '@react-three/fiber';
+import { Canvas, useThree, Viewport } from '@react-three/fiber';
 import { Environment, OrbitControls, Html } from '@react-three/drei';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Mesh } from 'three';
+import { Camera, Mesh, Object3D, Vector3 } from 'three';
 import { PLAYER_SPEED, SPHERE_RADIUS } from '@/game/constants';
 import {
   curveForChoiceTile,
@@ -23,6 +23,20 @@ import {
 } from '@/store/store';
 import { clamp } from 'three/src/math/MathUtils.js';
 
+import styles from './styles.module.css';
+
+// const toWorld = (object: Object3D, camera: Camera, viewport: Viewport) => {
+const toWorld = (object: Object3D) => {
+  const vector = new Vector3();
+  object.getWorldPosition(vector);
+  console.log('pos of ', object, 'is', vector);
+  return vector;
+  // vector.project(camera);
+  // const x = (vector.x * 0.5 + 0.5) * viewport.width;
+  // const y = (-vector.y * 0.5 + 0.5) * viewport.height;
+  // return { x, y };
+};
+
 const Game = () => {
   const meshRef = useRef<Mesh>(null);
 
@@ -38,10 +52,19 @@ const Game = () => {
   // const lowerMomentum = useStore((state) => state.lowerMomentum);
   const setEnteredFrom = useStore((state) => state.setEnteredFrom);
   const setNextConnection = useStore((state) => state.setNextConnection);
-
   const keysPressed = useStore((state) => state.keysPressed);
+  const currentExitRefs = useStore((state) => state.currentExitRefs);
+  const setArrowPositions = useStore((state) => state.setArrowPositions);
+  // const arrowPositions = useStore((state) => state.arrowPositions);
 
   useKeyboardControls();
+
+  const { camera, viewport } = useThree();
+
+  const arrowPositions = useMemo(
+    () => (currentTile?.type === 't' ? currentExitRefs.map(toWorld) : []),
+    [currentExitRefs, currentTile],
+  );
 
   // Start game :(
   useEffect(() => {
@@ -59,6 +82,7 @@ const Game = () => {
       playerMomentum,
       nextConnection,
     } = useStore.getState();
+
     let nextTile: Tile | undefined;
     const isPositive = playerMomentum >= 0;
 
@@ -188,6 +212,17 @@ const Game = () => {
 
   return (
     <group>
+      <group scale={[1.2, 1.2, 1.2]} position={[0, -0.2, 0]}>
+        {arrowPositions.map((pos, idx) => (
+          <group key={idx} position={pos}>
+            <Html>
+              <div className={styles.key}>
+                {idx === 0 ? '⭠' : idx === 1 ? '⭣' : '⭢'}
+              </div>
+            </Html>
+          </group>
+        ))}
+      </group>
       <color attach="background" args={['white']} />
       <ambientLight intensity={0.5} />
       <pointLight position={[10, 10, 10]} />
