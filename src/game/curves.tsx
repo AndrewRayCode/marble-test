@@ -1,5 +1,5 @@
-import { Tile, useStore } from '@/store/store';
-import { useMemo } from 'react';
+import { ChoiceTile, RailTile, useStore } from '@/store/store';
+import { useEffect, useMemo, useState } from 'react';
 import {
   CatmullRomCurve3,
   CubicBezierCurve3,
@@ -61,6 +61,26 @@ export const useCurve = (curve: CubicBezierCurve3) => {
   }, [curve]);
 };
 
+export const curveForRailTile = (tile: RailTile) =>
+  translateCurve(
+    rotateBezierCurve(
+      tile.type === 'straight' ? straightCurve : centerQuarterCurve,
+      new Euler(tile.rotation[0], tile.rotation[1], tile.rotation[2]),
+      new Vector3(0, 0.5, 0),
+    ),
+    new Vector3(tile.position[0], tile.position[1] - 0.5, tile.position[2]),
+  );
+
+export const curveForChoiceTile = (tile: ChoiceTile, entrance: number) =>
+  translateCurve(
+    rotateBezierCurve(
+      tile.type === 't' ? tStraights[entrance] : tStraights[entrance],
+      new Euler(tile.rotation[0], tile.rotation[1], tile.rotation[2]),
+      new Vector3(0, 0.5, 0),
+    ),
+    new Vector3(tile.position[0], tile.position[1] - 0.5, tile.position[2]),
+  );
+
 const pointAt45 = pointAroundCircle(45, INITIAL_SPHERE_RADIUS);
 
 const distanceFromEdge = INITIAL_SPHERE_RADIUS - pointAt45.x;
@@ -88,7 +108,7 @@ const SMALL_QUARTER_TURN_RADIUS = distanceFromEdge;
 const SMALL_QUARTER_TURN_HANDLE_LENGTH =
   SMALL_QUARTER_TURN_RADIUS * 0.551915024494; // Magic number for approximating a circle with cubic Beziers
 
-const SMALL_QUARTER_CORRECTION = 0.017;
+const SMALL_QUARTER_CORRECTION = 0.014;
 
 // Create three curves that form a SMALL_quarter circle
 const innerQuarterCurve = new CubicBezierCurve3(
@@ -106,7 +126,7 @@ const CENTER_QUARTER_TURN_RADIUS = 0.5;
 const CENTER_QUARTER_TURN_HANDLE_LENGTH =
   CENTER_QUARTER_TURN_RADIUS * 0.551915024494; // Magic number for approximating a circle with cubic Beziers
 
-const CENTER_QUARTER_CORRECTION = 0.08;
+const CENTER_QUARTER_CORRECTION = 0.008;
 
 export const centerQuarterCurve = new CubicBezierCurve3(
   new Vector3(0, 0, 0), // Start at origin
@@ -126,7 +146,39 @@ export const straightCurve = new CubicBezierCurve3(
   new Vector3(0, 1, 0),
 );
 
-export const Straightaway = ({ tile }: { tile: Tile }) => {
+export const reverseBezierCurve = (curve: CubicBezierCurve3) =>
+  new CubicBezierCurve3(
+    curve.v3.clone(),
+    curve.v2.clone(),
+    curve.v1.clone(),
+    curve.v0.clone(),
+  );
+
+export const tStraights = [
+  // Left arm of T
+  new CubicBezierCurve3(
+    new Vector3(-0.5, 0.5, 0),
+    new Vector3(-0.5, 0.5, 0),
+    new Vector3(0, 0.5, 0),
+    new Vector3(0, 0.5, 0),
+  ),
+  // Bottom of T
+  new CubicBezierCurve3(
+    new Vector3(0, 0, 0),
+    new Vector3(0, 0, 0),
+    new Vector3(0, 0.5, 0),
+    new Vector3(0, 0.5, 0),
+  ),
+  // Right arm of T
+  new CubicBezierCurve3(
+    new Vector3(0.5, 0.5, 0),
+    new Vector3(0.5, 0.5, 0),
+    new Vector3(0, 0.5, 0),
+    new Vector3(0, 0.5, 0),
+  ),
+];
+
+export const Straightaway = ({ tile }: { tile: RailTile }) => {
   const { position, rotation, showSides } = tile;
   const c1 = useCurve(straightCurve);
   const debug = useStore((state) => state.debug);
@@ -221,7 +273,7 @@ export const DebugCurveHandles = ({
   );
 };
 
-export const QuarterTurn = ({ tile }: { tile: Tile }) => {
+export const QuarterTurn = ({ tile }: { tile: RailTile }) => {
   const { position, rotation, showSides } = tile;
   const c1 = useCurve(quarterCurve);
   const c2 = useCurve(innerQuarterCurve);
@@ -283,6 +335,107 @@ export const QuarterTurn = ({ tile }: { tile: Tile }) => {
       {['all', 'left', 'back'].includes(showSides) ? (
         <mesh position={[-pointAt45.x, -0.5, -pointAt45.y]}>
           <tubeGeometry args={[c1, 70, RAIL_RADIUS, 50, false]} />
+          <meshStandardMaterial
+            roughness={0}
+            metalness={1.0}
+            wireframe={debug}
+          />
+        </mesh>
+      ) : null}
+    </group>
+  );
+};
+
+export const Junction = ({ tile }: { tile: ChoiceTile }) => {
+  const { position, rotation, showSides } = tile;
+  const str8 = useCurve(straightCurve);
+  const small = useCurve(innerQuarterCurve);
+  const debug = useStore((state) => state.debug);
+
+  // With a camera at the positive 6 position:
+  // -x is left, +x is right
+  // -y is down, +y is up
+  // -z is towards the camera, +z is away from the camera
+
+  return (
+    <group position={position} rotation={rotation}>
+      {debug && (
+        <mesh>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial wireframe color="green" />
+        </mesh>
+      )}
+      {/* front right */}
+      {['all', 'right', 'front'].includes(showSides) ? (
+        <mesh position={[pointAt45.x, -0.5, pointAt45.y]}>
+          <tubeGeometry args={[small, 70, 0.02, 50, false]} />
+          <meshStandardMaterial
+            roughness={0}
+            metalness={1.0}
+            wireframe={debug}
+          />
+        </mesh>
+      ) : null}
+      {/* front left */}
+      {['all', 'front'].includes(showSides) ? (
+        <mesh
+          position={[-pointAt45.x, -0.5, pointAt45.y]}
+          rotation={[0, Math.PI, 0]}
+        >
+          <tubeGeometry args={[small, 70, RAIL_RADIUS, 50, false]} />
+          <meshStandardMaterial
+            roughness={0}
+            metalness={1.0}
+            wireframe={debug}
+          />
+        </mesh>
+      ) : null}
+      {/* back right */}
+      {['all', 'back'].includes(showSides) ? (
+        <mesh position={[pointAt45.x, -0.5, -pointAt45.y]}>
+          <tubeGeometry args={[small, 70, RAIL_RADIUS, 50, false]} />
+          <meshStandardMaterial
+            roughness={0}
+            metalness={1.0}
+            wireframe={debug}
+          />
+        </mesh>
+      ) : null}
+      {/* back left */}
+      {['all', 'back'].includes(showSides) ? (
+        <mesh
+          position={[-pointAt45.x, -0.5, -pointAt45.y]}
+          rotation={[0, Math.PI, 0]}
+        >
+          <tubeGeometry args={[small, 70, RAIL_RADIUS, 50, false]} />
+          <meshStandardMaterial
+            roughness={0}
+            metalness={1.0}
+            wireframe={debug}
+          />
+        </mesh>
+      ) : null}
+      {/* top back */}
+      {['all', 'back'].includes(showSides) ? (
+        <mesh
+          position={[-0.5, pointAt45.y, -pointAt45.y]}
+          rotation={[0, 0, -Math.PI / 2]}
+        >
+          <tubeGeometry args={[str8, 70, RAIL_RADIUS, 50, false]} />
+          <meshStandardMaterial
+            roughness={0}
+            metalness={1.0}
+            wireframe={debug}
+          />
+        </mesh>
+      ) : null}
+      {/* top front */}
+      {['all', 'front'].includes(showSides) ? (
+        <mesh
+          position={[-0.5, pointAt45.y, pointAt45.y]}
+          rotation={[0, 0, -Math.PI / 2]}
+        >
+          <tubeGeometry args={[str8, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
             roughness={0}
             metalness={1.0}
