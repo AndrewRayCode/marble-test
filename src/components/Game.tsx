@@ -223,7 +223,6 @@ const Game = () => {
       1,
     );
 
-    // const progress = isPositive ? updatedProgress : 1.0 - updatedProgress;
     setCurveProgress(progress);
 
     if (marbleRef.current && currentCurve && currentTile) {
