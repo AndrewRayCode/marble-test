@@ -1,22 +1,28 @@
 'use client';
 
 import { Canvas, useThree, Viewport } from '@react-three/fiber';
-import { Environment, OrbitControls, Html } from '@react-three/drei';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Environment,
+  OrbitControls,
+  Html,
+  TransformControls,
+} from '@react-three/drei';
+
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Camera, Mesh, Object3D, Vector3 } from 'three';
+import { Camera, Mesh, Object3D, Vector2, Vector3 } from 'three';
 import { PLAYER_SPEED, SPHERE_RADIUS } from '@/game/constants';
 import {
   curveForChoiceTile,
   curveForRailTile,
   QuarterTurn,
-  reverseBezierCurve,
   Straightaway,
   Junction,
 } from '@/game/curves';
 import {
-  isChoiceTile,
   isRailTile,
+  ScreenArrow,
+  ScreenArrows,
   Tile,
   useKeyboardControls,
   useStore,
@@ -25,20 +31,70 @@ import { clamp } from 'three/src/math/MathUtils.js';
 
 import styles from './styles.module.css';
 
-// const toWorld = (object: Object3D, camera: Camera, viewport: Viewport) => {
 const toWorld = (object: Object3D) => {
   const vector = new Vector3();
   object.getWorldPosition(vector);
-  console.log('pos of ', object, 'is', vector);
   return vector;
-  // vector.project(camera);
-  // const x = (vector.x * 0.5 + 0.5) * viewport.width;
-  // const y = (-vector.y * 0.5 + 0.5) * viewport.height;
-  // return { x, y };
+};
+
+const toScreen = (position: Vector3, camera: Camera, viewport: Viewport) => {
+  const vector = position.clone();
+  vector.project(camera);
+  const x = (vector.x * 0.5 + 0.5) * viewport.width;
+  const y = (-vector.y * 0.5 + 0.5) * viewport.height;
+  return { x, y };
+};
+
+const lowest = (a: {
+  left: number;
+  right: number;
+  up: number;
+  down: number;
+}): 'left' | 'right' | 'up' | 'down' => {
+  const { left, right, up, down } = a;
+  if (left < right && left < up && left < down) {
+    return 'left';
+  }
+  if (right < left && right < up && right < down) {
+    return 'right';
+  }
+  if (up < left && up < right && up < down) {
+    return 'up';
+  }
+  return 'down';
+};
+
+const arrowLookup = {
+  left: '⭠',
+  right: '⭢',
+  up: '⭡',
+  down: '⭣',
+};
+
+const screenLeft = new Vector2(-1, 0);
+const screenRight = new Vector2(1, 0);
+const screenUp = new Vector2(0, -1);
+const screenDown = new Vector2(0, 1);
+
+const useThung = () => {
+  const itemsRef = useRef(new Map());
+
+  const setRef = useCallback(
+    (key: string | number) => (node: unknown) => {
+      if (node) {
+        itemsRef.current.set(key, node);
+      } else {
+        itemsRef.current.delete(key);
+      }
+    },
+    [],
+  );
+
+  return [itemsRef.current, setRef] as const;
 };
 
 const Game = () => {
-  const meshRef = useRef<Mesh>(null);
+  const marbleRef = useRef<Mesh>(null);
 
   const setCurrentCurve = useStore((state) => state.setCurrentCurve);
   const currentCurve = useStore((state) => state.currentCurve);
@@ -48,16 +104,30 @@ const Game = () => {
   const currentTile = useStore((state) => state.currentTile);
   const level = useStore((state) => state.level);
   const setMomentum = useStore((state) => state.setMomentum);
-  //const playerMomentum = useStore((state) => state.playerMomentum);
-  // const lowerMomentum = useStore((state) => state.lowerMomentum);
   const setEnteredFrom = useStore((state) => state.setEnteredFrom);
   const setNextConnection = useStore((state) => state.setNextConnection);
   const keysPressed = useStore((state) => state.keysPressed);
   const currentExitRefs = useStore((state) => state.currentExitRefs);
-  const setArrowPositions = useStore((state) => state.setArrowPositions);
-  // const arrowPositions = useStore((state) => state.arrowPositions);
+  const [arrowRefs, setArrowRef] = useThung();
 
   useKeyboardControls();
+
+  const orbit = useRef<typeof OrbitControls>();
+  const transform = useRef<typeof TransformControls>();
+  const [mode, setMode] = useState('translate');
+  // useEffect(() => {
+  //   if (transform.current) {
+  //     const controls = transform.current;
+  //     console.log({ controls }, controls.setMode);
+  //     controls.setMode(mode);
+  //     const callback = (event) => {
+  //       console.log('dreg');
+  //       // OrbitControls.current.enabled = !event.value;
+  //     };
+  //     controls.addEventListener('dragging-changed', callback);
+  //     return () => controls.removeEventListener('dragging-changed', callback);
+  //   }
+  // }, []);
 
   const { camera, viewport } = useThree();
 
@@ -83,6 +153,61 @@ const Game = () => {
       nextConnection,
     } = useStore.getState();
 
+    const marbleScreen = toScreen(
+      marbleRef.current!.position,
+      camera,
+      viewport,
+    );
+
+    const entranceDistances = arrowPositions.map((position, entrance) => {
+      const screen = toScreen(position, camera, viewport);
+      // Create vector pointing from marble to entrance
+      const v = new Vector2(
+        screen.x - marbleScreen.x,
+        screen.y - marbleScreen.y,
+      );
+      return {
+        entrance,
+        position,
+        left: screenLeft.angleTo(v),
+        right: screenRight.angleTo(v),
+        up: screenUp.angleTo(v),
+        down: screenDown.angleTo(v),
+      };
+    });
+
+    const seen = new Set<string>();
+    const arrowsForEntrances = entranceDistances.reduce((acc, d) => {
+      // Figure out which cardinal direction this is most pointing
+      const arrow = lowest(d);
+      // Only one entrance per cardinal direction!
+      if (!seen.has(arrow)) {
+        seen.add(arrow);
+        return acc.concat({
+          d: 0,
+          position: d.position,
+          entrance: d.entrance,
+          arrow: lowest(d),
+        });
+      }
+      return acc;
+    }, [] as ScreenArrows);
+
+    arrowsForEntrances.forEach((arrow, i) => {
+      arrowRefs.get(i)?.position.copy(arrow.position);
+      (arrowRefs.get(`${i}_text`) as HTMLDivElement).textContent =
+        arrowLookup[arrow.arrow];
+    });
+
+    // setScreenArrows(arrowsForEntrances);
+    const directions = arrowsForEntrances.reduce(
+      (acc, arrow) => {
+        acc[arrow.arrow] = arrow;
+        return acc;
+      },
+      {} as Record<string, ScreenArrow>,
+    );
+
     let nextTile: Tile | undefined;
     const isPositive = playerMomentum >= 0;
 
@@ -101,7 +226,7 @@ const Game = () => {
     // const progress = isPositive ? updatedProgress : 1.0 - updatedProgress;
     setCurveProgress(progress);
 
-    if (meshRef.current && currentCurve && currentTile) {
+    if (marbleRef.current && currentCurve && currentTile) {
       if (playerMomentum === 0) {
         if (keysPressed.has('ArrowUp')) {
           setMomentum(PLAYER_SPEED);
@@ -114,7 +239,7 @@ const Game = () => {
       const point = currentCurve.getPointAt(progress);
 
       // Update the sphere's position
-      meshRef.current.position.copy(point);
+      marbleRef.current.position.copy(point);
 
       let nextIdx: number | null | undefined;
       let nextId: string | null | undefined;
@@ -126,21 +251,34 @@ const Game = () => {
         if (currentTile.type == 't') {
           // We are going towards, and have landed on, the center
           if (nextConnection === -1) {
-            const isDown = keysPressed.has('ArrowDown');
-            const isLeft = keysPressed.has('ArrowLeft');
-            const isRight = keysPressed.has('ArrowRight');
-            const noKey = !isDown && !isLeft && !isRight;
+            const isDown = keysPressed.has('ArrowDown') && directions.down;
+            const isLeft = keysPressed.has('ArrowLeft') && directions.left;
+            const isRight = keysPressed.has('ArrowRight') && directions.right;
+            const isUp = keysPressed.has('ArrowUp') && directions.up;
+
+            let nextConnection: number | undefined;
+            if (isDown || isLeft || isRight || isUp) {
+              nextConnection = isDown
+                ? directions.down.entrance
+                : isLeft
+                  ? directions.left.entrance
+                  : isRight
+                    ? directions.right.entrance
+                    : directions.up.entrance;
+            }
 
             // auto continue through
-            const goLeft = isLeft || (enteredFrom === 2 && noKey);
-            const goRight = isRight || (enteredFrom === 0 && noKey);
-            const goDown = isDown;
+            // const noKey = !isDown && !isLeft && !isRight && !isUp;
+            // const autoLeft = enteredFrom === 2 && noKey;
+            // const autoRight = enteredFrom === 0 && noKey;
+            // if (autoLeft || autoRight) {
+            //   nextConnection = autoLeft ? 0 : 1;
+            // }
 
-            if (goLeft || goRight || goDown) {
+            if (nextConnection !== undefined) {
               // Start from the T junction
               setEnteredFrom(-1);
 
-              const nextConnection = goLeft ? 0 : goDown ? 1 : 2;
               setNextConnection(nextConnection);
               // We are moving out from T so negative momentum
               setMomentum(-PLAYER_SPEED);
@@ -153,7 +291,7 @@ const Game = () => {
               setCurveProgress(1.0);
               // We are at the t junction, we came from the bottom, and no keys
               // were pressed, so stop!
-            } else if (enteredFrom === 1) {
+            } else if (enteredFrom === 1 && playerMomentum !== 0) {
               setMomentum(0);
             }
             // We are getting the hell out of here
@@ -212,35 +350,38 @@ const Game = () => {
 
   return (
     <group>
-      <group scale={[1.2, 1.2, 1.2]} position={[0, -0.2, 0]}>
-        {arrowPositions.map((pos, idx) => (
-          <group key={idx} position={pos}>
-            <Html>
-              <div className={styles.key}>
-                {idx === 0 ? '⭠' : idx === 1 ? '⭣' : '⭢'}
-              </div>
-            </Html>
-          </group>
-        ))}
-      </group>
+      {arrowPositions.map((_, i) => (
+        <group ref={setArrowRef(i)} key={i}>
+          <Html>
+            <div className={styles.key} ref={setArrowRef(`${i}_text`)}></div>
+          </Html>
+        </group>
+      ))}
       <color attach="background" args={['white']} />
       <ambientLight intensity={0.5} />
       <pointLight position={[10, 10, 10]} />
       <Environment
         files="/envmaps/room.hdr"
         background
-        backgroundBlurriness={0.3}
+        backgroundBlurriness={0.5}
       />
-      <mesh ref={meshRef}>
+      <mesh ref={marbleRef}>
         <sphereGeometry args={[SPHERE_RADIUS, 256, 256]} />
         <meshStandardMaterial
-          metalness={0.9}
+          metalness={0.4}
           roughness={0.01}
-          color="purple"
           envMapIntensity={0.5}
-          emissive={0x222222}
+          emissive={0x333333}
         />
       </mesh>
+
+      <TransformControls mode="translate" translationSnap={0.5}>
+        <mesh>
+          <boxGeometry args={[1, 1, 1]} />
+          <meshStandardMaterial color="hotpink" wireframe />
+        </mesh>
+      </TransformControls>
+
       {level.map((tile) => {
         if (tile.type === 'straight') {
           return <Straightaway key={tile.id} tile={tile} />;
@@ -298,7 +439,7 @@ const Game = () => {
           <meshStandardMaterial color="red" opacity={0.5} transparent />
         </mesh>
       )}
-      <OrbitControls />
+      <OrbitControls ref={orbit} />
     </group>
   );
 };
@@ -309,7 +450,8 @@ export default function ThreeScene() {
   const setCurrentCurve = useStore((state) => state.setCurrentCurve);
   const resetLevel = useStore((state) => state.resetLevel);
   const playerMomentum = useStore((state) => state.playerMomentum);
-  const curveProgress = useStore((state) => state.curveProgress);
+  // const curveProgress = useStore((state) => state.curveProgress);
+  const debug = useStore((state) => state.debug);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
@@ -333,10 +475,12 @@ export default function ThreeScene() {
       <Canvas camera={{ position: [0, 0, 6] }} className="h-full w-full">
         <Game />
       </Canvas>
-      <div className="absolute bottom-0 right-0 h-16 w-64 z-2 bg-slate-900 shadow-lg rounded-lg p-2 text-sm">
-        <div>momentum: {playerMomentum}</div>
-        <div>curve progress: {Math.round(curveProgress * 10) / 10}</div>
-      </div>
+      {debug && (
+        <div className="absolute bottom-0 right-0 h-16 w-64 z-2 bg-slate-900 shadow-lg rounded-lg p-2 text-sm">
+          <div>momentum: {playerMomentum}</div>
+          {/* <div>curve progress: {Math.round(curveProgress * 10) / 10}</div> */}
+        </div>
+      )}
     </div>
   );
 }

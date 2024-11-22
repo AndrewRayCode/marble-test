@@ -4,7 +4,7 @@ import dynamic from 'next/dynamic';
 import { Suspense } from 'react';
 
 // Dynamically import the ThreeScene component to avoid SSR issues
-const ThreeScene = dynamic(() => import('@/components/Thrlex'), {
+const ThreeScene = dynamic(() => import('@/components/Game'), {
   ssr: false,
   loading: () => (
     <div className="flex h-screen w-full items-center justify-center bg-gray-100 text-white">

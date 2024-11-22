@@ -214,11 +214,12 @@ export const Straightaway = ({ tile }: { tile: RailTile }) => {
       {/* front right */}
       {['all', 'right', 'front'].includes(showSides) ? (
         <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
-          <tubeGeometry args={[c1, 70, 0.02, 50, false]} />
+          <tubeGeometry args={[c1, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
             roughness={0}
             metalness={1.0}
             wireframe={debug}
+            color="#777777"
           />
         </mesh>
       ) : null}
@@ -230,6 +231,7 @@ export const Straightaway = ({ tile }: { tile: RailTile }) => {
             roughness={0}
             metalness={1.0}
             wireframe={debug}
+            color="#777777"
           />
         </mesh>
       ) : null}
@@ -241,6 +243,7 @@ export const Straightaway = ({ tile }: { tile: RailTile }) => {
             roughness={0}
             metalness={1.0}
             wireframe={debug}
+            color="#777777"
           />
         </mesh>
       ) : null}
@@ -252,6 +255,7 @@ export const Straightaway = ({ tile }: { tile: RailTile }) => {
             roughness={0}
             metalness={1.0}
             wireframe={debug}
+            color="#777777"
           />
         </mesh>
       ) : null}
@@ -316,11 +320,12 @@ export const QuarterTurn = ({ tile }: { tile: RailTile }) => {
       {/* front right */}
       {['all', 'right', 'front'].includes(showSides) ? (
         <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
-          <tubeGeometry args={[c2, 70, 0.02, 50, false]} />
+          <tubeGeometry args={[c2, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
             roughness={0}
             metalness={1.0}
             wireframe={debug}
+            color="#777777"
           />
         </mesh>
       ) : null}
@@ -332,6 +337,7 @@ export const QuarterTurn = ({ tile }: { tile: RailTile }) => {
             roughness={0}
             metalness={1.0}
             wireframe={debug}
+            color="#777777"
           />
         </mesh>
       ) : null}
@@ -343,6 +349,7 @@ export const QuarterTurn = ({ tile }: { tile: RailTile }) => {
             roughness={0}
             metalness={1.0}
             wireframe={debug}
+            color="#777777"
           />
         </mesh>
       ) : null}
@@ -354,6 +361,7 @@ export const QuarterTurn = ({ tile }: { tile: RailTile }) => {
             roughness={0}
             metalness={1.0}
             wireframe={debug}
+            color="#777777"
           />
         </mesh>
       ) : null}
@@ -391,17 +399,19 @@ export const Junction = ({ tile }: { tile: ChoiceTile }) => {
 
   return (
     <group position={position} rotation={rotation}>
-      {exits.map((exit, i) => (
-        <group
-          key={i}
-          position={exit}
-          ref={(elem) => {
-            if (elem) {
-              exitRefs.current[i] = elem;
-            }
-          }}
-        ></group>
-      ))}
+      <group scale={[1.2, 1.2, 1.2]}>
+        {exits.map((exit, i) => (
+          <group
+            key={i}
+            position={exit}
+            ref={(elem) => {
+              if (elem) {
+                exitRefs.current[i] = elem;
+              }
+            }}
+          ></group>
+        ))}
+      </group>
       {debug && (
         <mesh>
           <boxGeometry args={[1, 1, 1]} />
@@ -411,11 +421,12 @@ export const Junction = ({ tile }: { tile: ChoiceTile }) => {
       {/* front right */}
       {['all', 'right', 'front'].includes(showSides) ? (
         <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
-          <tubeGeometry args={[small, 70, 0.02, 50, false]} />
+          <tubeGeometry args={[small, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
             roughness={0}
             metalness={1.0}
             wireframe={debug}
+            color="#777777"
           />
         </mesh>
       ) : null}
@@ -430,6 +441,7 @@ export const Junction = ({ tile }: { tile: ChoiceTile }) => {
             roughness={0}
             metalness={1.0}
             wireframe={debug}
+            color="#777777"
           />
         </mesh>
       ) : null}
@@ -441,6 +453,7 @@ export const Junction = ({ tile }: { tile: ChoiceTile }) => {
             roughness={0}
             metalness={1.0}
             wireframe={debug}
+            color="#777777"
           />
         </mesh>
       ) : null}
@@ -455,6 +468,7 @@ export const Junction = ({ tile }: { tile: ChoiceTile }) => {
             roughness={0}
             metalness={1.0}
             wireframe={debug}
+            color="#777777"
           />
         </mesh>
       ) : null}
@@ -469,6 +483,7 @@ export const Junction = ({ tile }: { tile: ChoiceTile }) => {
             roughness={0}
             metalness={1.0}
             wireframe={debug}
+            color="#777777"
           />
         </mesh>
       ) : null}
@@ -483,6 +498,7 @@ export const Junction = ({ tile }: { tile: ChoiceTile }) => {
             roughness={0}
             metalness={1.0}
             wireframe={debug}
+            color="#777777"
           />
         </mesh>
       ) : null}

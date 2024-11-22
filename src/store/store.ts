@@ -167,6 +167,14 @@ export const level: Level = [
   },
 ];
 
+export type ScreenArrow = {
+  d: number;
+  position: Vector3;
+  entrance: number;
+  arrow: 'up' | 'down' | 'left' | 'right';
+};
+export type ScreenArrows = ScreenArrow[];
+
 export interface Store {
   debug: boolean;
   toggleDebug: () => void;
@@ -193,11 +201,14 @@ export interface Store {
   arrowPositions: Vector3[];
   setArrowPositions: (positions: Vector3[]) => void;
 
+  screenArrows: ScreenArrows;
+  setScreenArrows: (arrows: ScreenArrows) => void;
+
   resetLevel: (leveL: Level) => void;
 }
 
 export const useStore = create<Store>((set) => ({
-  debug: true,
+  debug: false,
   toggleDebug: () => set((state) => ({ debug: !state.debug })),
   currentCurve: null,
   setCurrentCurve: (curve) => set({ currentCurve: curve }),
@@ -250,6 +261,9 @@ export const useStore = create<Store>((set) => ({
 
   arrowPositions: [],
   setArrowPositions: (arrowPositions) => set({ arrowPositions }),
+
+  screenArrows: [],
+  setScreenArrows: (screenArrows) => set({ screenArrows }),
 
   resetLevel: (level) =>
     set({
