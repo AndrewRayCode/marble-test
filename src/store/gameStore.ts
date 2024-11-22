@@ -175,7 +175,7 @@ export type ScreenArrow = {
 };
 export type ScreenArrows = ScreenArrow[];
 
-export interface Store {
+export interface GameStore {
   debug: boolean;
   toggleDebug: () => void;
   currentCurve: CubicBezierCurve3 | null;
@@ -207,7 +207,7 @@ export interface Store {
   resetLevel: (leveL: Level) => void;
 }
 
-export const useStore = create<Store>((set) => ({
+export const useGameStore = create<GameStore>((set) => ({
   debug: false,
   toggleDebug: () => set((state) => ({ debug: !state.debug })),
   currentCurve: null,
@@ -278,7 +278,7 @@ export const useStore = create<Store>((set) => ({
 }));
 
 export const useKeyboardControls = () => {
-  const { setKeyPressed } = useStore();
+  const setKeyPressed = useGameStore((state) => state.setKeyPressed);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -299,5 +299,5 @@ export const useKeyboardControls = () => {
     };
   }, [setKeyPressed]);
 
-  return useStore;
+  return useGameStore;
 };

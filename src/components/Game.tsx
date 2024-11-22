@@ -1,6 +1,6 @@
 'use client';
 
-import { Canvas, useThree, Viewport } from '@react-three/fiber';
+import { Canvas, useThree } from '@react-three/fiber';
 import {
   Environment,
   OrbitControls,
@@ -8,9 +8,9 @@ import {
   TransformControls,
 } from '@react-three/drei';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
-import { Camera, Mesh, Object3D, Vector2, Vector3 } from 'three';
+import { Mesh, Vector2, Vector3 } from 'three';
 import { PLAYER_SPEED, SPHERE_RADIUS } from '@/game/constants';
 import {
   curveForChoiceTile,
@@ -25,25 +25,12 @@ import {
   ScreenArrows,
   Tile,
   useKeyboardControls,
-  useStore,
-} from '@/store/store';
+  useGameStore,
+} from '@/store/gameStore';
 import { clamp } from 'three/src/math/MathUtils.js';
 
-import styles from './styles.module.css';
-
-const toWorld = (object: Object3D) => {
-  const vector = new Vector3();
-  object.getWorldPosition(vector);
-  return vector;
-};
-
-const toScreen = (position: Vector3, camera: Camera, viewport: Viewport) => {
-  const vector = position.clone();
-  vector.project(camera);
-  const x = (vector.x * 0.5 + 0.5) * viewport.width;
-  const y = (-vector.y * 0.5 + 0.5) * viewport.height;
-  return { x, y };
-};
+import { toScreen, toWorld } from '@/util/math';
+import OnScreenArrows from './OnScreenArrows';
 
 const lowest = (a: {
   left: number;
@@ -64,70 +51,44 @@ const lowest = (a: {
   return 'down';
 };
 
-const arrowLookup = {
-  left: '⭠',
-  right: '⭢',
-  up: '⭡',
-  down: '⭣',
-};
-
 const screenLeft = new Vector2(-1, 0);
 const screenRight = new Vector2(1, 0);
 const screenUp = new Vector2(0, -1);
 const screenDown = new Vector2(0, 1);
 
-const useThung = () => {
-  const itemsRef = useRef(new Map());
-
-  const setRef = useCallback(
-    (key: string | number) => (node: unknown) => {
-      if (node) {
-        itemsRef.current.set(key, node);
-      } else {
-        itemsRef.current.delete(key);
-      }
-    },
-    [],
-  );
-
-  return [itemsRef.current, setRef] as const;
-};
-
 const Game = () => {
   const marbleRef = useRef<Mesh>(null);
 
-  const setCurrentCurve = useStore((state) => state.setCurrentCurve);
-  const currentCurve = useStore((state) => state.currentCurve);
-  const setCurveProgress = useStore((state) => state.setCurveProgress);
-  const setCurrentTile = useStore((state) => state.setCurrentTile);
-  const debug = useStore((state) => state.debug);
-  const currentTile = useStore((state) => state.currentTile);
-  const level = useStore((state) => state.level);
-  const setMomentum = useStore((state) => state.setMomentum);
-  const setEnteredFrom = useStore((state) => state.setEnteredFrom);
-  const setNextConnection = useStore((state) => state.setNextConnection);
-  const keysPressed = useStore((state) => state.keysPressed);
-  const currentExitRefs = useStore((state) => state.currentExitRefs);
-  const [arrowRefs, setArrowRef] = useThung();
+  const setScreenArrows = useGameStore((state) => state.setScreenArrows);
+  const setCurrentCurve = useGameStore((state) => state.setCurrentCurve);
+  const currentCurve = useGameStore((state) => state.currentCurve);
+  const setCurveProgress = useGameStore((state) => state.setCurveProgress);
+  const setCurrentTile = useGameStore((state) => state.setCurrentTile);
+  const debug = useGameStore((state) => state.debug);
+  const currentTile = useGameStore((state) => state.currentTile);
+  const level = useGameStore((state) => state.level);
+  const setMomentum = useGameStore((state) => state.setMomentum);
+  const setEnteredFrom = useGameStore((state) => state.setEnteredFrom);
+  const setNextConnection = useGameStore((state) => state.setNextConnection);
+  const keysPressed = useGameStore((state) => state.keysPressed);
+  const currentExitRefs = useGameStore((state) => state.currentExitRefs);
 
   useKeyboardControls();
 
   const orbit = useRef<typeof OrbitControls>();
   const transform = useRef<typeof TransformControls>();
   const [mode, setMode] = useState('translate');
-  // useEffect(() => {
-  //   if (transform.current) {
-  //     const controls = transform.current;
-  //     console.log({ controls }, controls.setMode);
-  //     controls.setMode(mode);
-  //     const callback = (event) => {
-  //       console.log('dreg');
-  //       // OrbitControls.current.enabled = !event.value;
-  //     };
-  //     controls.addEventListener('dragging-changed', callback);
-  //     return () => controls.removeEventListener('dragging-changed', callback);
-  //   }
-  // }, []);
+  useEffect(() => {
+    if (transform.current) {
+      const controls = transform.current;
+      controls.setMode(mode);
+      const callback = (event) => {
+        orbit.current.enabled = !event.value;
+      };
+      controls.addEventListener('dragging-changed', callback);
+      return () => controls.removeEventListener('dragging-changed', callback);
+    }
+  }, [mode]);
 
   const { camera, viewport } = useThree();
 
@@ -136,6 +97,7 @@ const Game = () => {
     [currentExitRefs, currentTile],
   );
 
+  console.log('render');
   // Start game :(
   useEffect(() => {
     console.log('Starting game');
@@ -151,10 +113,10 @@ const Game = () => {
       currentTile,
       playerMomentum,
       nextConnection,
-    } = useStore.getState();
+    } = useGameStore.getState();
 
-    const marbleScreen = toScreen(
-      marbleRef.current!.position,
+    const tileScreen = toScreen(
+      new Vector3(...currentTile!.position),
       camera,
       viewport,
     );
@@ -162,10 +124,7 @@ const Game = () => {
     const entranceDistances = arrowPositions.map((position, entrance) => {
       const screen = toScreen(position, camera, viewport);
       // Create vector pointing from marble to entrance
-      const v = new Vector2(
-        screen.x - marbleScreen.x,
-        screen.y - marbleScreen.y,
-      );
+      const v = new Vector2(screen.x - tileScreen.x, screen.y - tileScreen.y);
       return {
         entrance,
         position,
@@ -193,13 +152,8 @@ const Game = () => {
       return acc;
     }, [] as ScreenArrows);
 
-    arrowsForEntrances.forEach((arrow, i) => {
-      arrowRefs.get(i)?.position.copy(arrow.position);
-      (arrowRefs.get(`${i}_text`) as HTMLDivElement).textContent =
-        arrowLookup[arrow.arrow];
-    });
+    setScreenArrows(arrowsForEntrances);
 
-    // setScreenArrows(arrowsForEntrances);
     const directions = arrowsForEntrances.reduce(
       (acc, arrow) => {
         acc[arrow.arrow] = arrow;
@@ -290,7 +244,7 @@ const Game = () => {
               setCurveProgress(1.0);
               // We are at the t junction, we came from the bottom, and no keys
               // were pressed, so stop!
-            } else if (enteredFrom === 1 && playerMomentum !== 0) {
+            } else if (playerMomentum !== 0) {
               setMomentum(0);
             }
             // We are getting the hell out of here
@@ -349,13 +303,6 @@ const Game = () => {
 
   return (
     <group>
-      {arrowPositions.map((_, i) => (
-        <group ref={setArrowRef(i)} key={i}>
-          <Html>
-            <div className={styles.key} ref={setArrowRef(`${i}_text`)}></div>
-          </Html>
-        </group>
-      ))}
       <color attach="background" args={['white']} />
       <ambientLight intensity={0.5} />
       <pointLight position={[10, 10, 10]} />
@@ -364,6 +311,8 @@ const Game = () => {
         background
         backgroundBlurriness={0.5}
       />
+
+      {/* Player */}
       <mesh ref={marbleRef}>
         <sphereGeometry args={[SPHERE_RADIUS, 256, 256]} />
         <meshStandardMaterial
@@ -380,6 +329,9 @@ const Game = () => {
           <meshStandardMaterial color="hotpink" wireframe />
         </mesh>
       </TransformControls>
+
+      {/* On-screen arrows */}
+      <OnScreenArrows />
 
       {level.map((tile) => {
         if (tile.type === 'straight') {
@@ -444,13 +396,13 @@ const Game = () => {
 };
 
 export default function ThreeScene() {
-  const toggleDebug = useStore((state) => state.toggleDebug);
-  const level = useStore((state) => state.level);
-  const setCurrentCurve = useStore((state) => state.setCurrentCurve);
-  const resetLevel = useStore((state) => state.resetLevel);
-  const playerMomentum = useStore((state) => state.playerMomentum);
+  const toggleDebug = useGameStore((state) => state.toggleDebug);
+  const level = useGameStore((state) => state.level);
+  const setCurrentCurve = useGameStore((state) => state.setCurrentCurve);
+  const resetLevel = useGameStore((state) => state.resetLevel);
+  const playerMomentum = useGameStore((state) => state.playerMomentum);
   // const curveProgress = useStore((state) => state.curveProgress);
-  const debug = useStore((state) => state.debug);
+  const debug = useGameStore((state) => state.debug);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {

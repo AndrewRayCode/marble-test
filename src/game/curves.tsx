@@ -1,4 +1,4 @@
-import { ChoiceTile, RailTile, useStore } from '@/store/store';
+import { ChoiceTile, RailTile, useGameStore } from '@/store/gameStore';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CatmullRomCurve3,
@@ -196,7 +196,7 @@ export const tStraights = [
 export const Straightaway = ({ tile }: { tile: RailTile }) => {
   const { position, rotation, showSides } = tile;
   const c1 = useCurve(straightCurve);
-  const debug = useStore((state) => state.debug);
+  const debug = useGameStore((state) => state.debug);
 
   // With a camera at the positive 6 position:
   // -x is left, +x is right
@@ -296,7 +296,7 @@ export const QuarterTurn = ({ tile }: { tile: RailTile }) => {
   const { position, rotation, showSides } = tile;
   const c1 = useCurve(quarterCurve);
   const c2 = useCurve(innerQuarterCurve);
-  const debug = useStore((state) => state.debug);
+  const debug = useGameStore((state) => state.debug);
 
   // With a camera at the positive 6 position:
   // -x is left, +x is right
@@ -373,9 +373,9 @@ export const Junction = ({ tile }: { tile: ChoiceTile }) => {
   const { position, rotation, showSides } = tile;
   const str8 = useCurve(straightCurve);
   const small = useCurve(innerQuarterCurve);
-  const debug = useStore((state) => state.debug);
-  const setCurrentExitRefs = useStore((state) => state.setCurrentExitRefs);
-  const currentTile = useStore((state) => state.currentTile);
+  const debug = useGameStore((state) => state.debug);
+  const setCurrentExitRefs = useGameStore((state) => state.setCurrentExitRefs);
+  const currentTile = useGameStore((state) => state.currentTile);
 
   const exits = useMemo(
     () =>
