@@ -34,7 +34,7 @@ import { toScreen, toWorld } from '@/util/math';
 import OnScreenArrows from './OnScreenArrows';
 
 import cx from 'classnames';
-import EditorComponent, { EditorUI } from './Editor';
+import EditorComponent, { EditorUI } from './Editor/Editor';
 
 const lowest = (a: {
   left: number;
@@ -405,33 +405,44 @@ const Game = () => {
 export default function ThreeScene() {
   const playerMomentum = useGameStore((state) => state.playerMomentum);
   // const curveProgress = useStore((state) => state.curveProgress);
+  const isEditing = useGameStore((state) => state.isEditing);
   const debug = useGameStore((state) => state.debug);
 
   return (
     <div className={cx('h-screen w-full bg-gray-900')}>
-      <EditorUI>
-        <KeyboardControls
-          map={[
-            { name: 'up', keys: ['ArrowUp'] },
-            { name: 'down', keys: ['ArrowDown'] },
-            { name: 'left', keys: ['ArrowLeft'] },
-            { name: 'right', keys: ['ArrowRight'] },
-            { name: 'debug', keys: ['d'] },
-            { name: 'reset', keys: ['r'] },
-            { name: 'edit', keys: ['e'] },
-          ]}
-        >
+      <KeyboardControls
+        map={[
+          { name: 'up', keys: ['ArrowUp'] },
+          { name: 'down', keys: ['ArrowDown'] },
+          { name: 'left', keys: ['ArrowLeft'] },
+          { name: 'right', keys: ['ArrowRight'] },
+          { name: 'debug', keys: ['d'] },
+          { name: 'reset', keys: ['r'] },
+          // Editor shortcuts, since you can't stack keyboardcontrols
+          { name: 'edit', keys: ['e'] },
+          { name: 'gridRotate', keys: ['g'] },
+          { name: 'add', keys: ['a'] },
+          { name: 'delete', keys: ['x'] },
+          { name: 'one', keys: ['1'] },
+          { name: 'two', keys: ['2'] },
+          { name: 'three', keys: ['3'] },
+          { name: 'j', keys: ['j'] },
+          { name: 's', keys: ['s'] },
+          { name: 'q', keys: ['q'] },
+        ]}
+      >
+        <EditorUI enabled={isEditing}>
           <Canvas camera={{ position: [0, 0, 6] }} className="h-full w-full">
             <Game />
           </Canvas>
-        </KeyboardControls>
-        {debug && (
-          <div className="absolute bottom-0 right-0 h-16 w-64 z-2 bg-slate-900 shadow-lg rounded-lg p-2 text-sm">
-            <div>momentum: {playerMomentum}</div>
-            {/* <div>curve progress: {Math.round(curveProgress * 10) / 10}</div> */}
-          </div>
-        )}
-      </EditorUI>
+          {debug && (
+            <div className="absolute bottom-0 right-0 h-16 w-64 z-2 bg-slate-900 shadow-lg rounded-lg p-2 text-sm">
+              <div>momentum: {playerMomentum}</div>
+              {/* <div>curve progress: {Math.round(curveProgress * 10) / 10}</div> */}
+            </div>
+          )}
+        </EditorUI>
+      </KeyboardControls>
     </div>
   );
 }

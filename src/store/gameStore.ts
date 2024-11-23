@@ -3,12 +3,14 @@ import { useEffect } from 'react';
 import { CubicBezierCurve3, Group, Vector3 } from 'three';
 import { create } from 'zustand';
 
+export type Side = 'left' | 'right' | 'front' | 'back';
+
 export type RailTile = {
   id: string;
   type: 'straight' | 'quarter';
   position: [number, number, number];
   rotation: [number, number, number];
-  showSides: 'all' | 'left' | 'right' | 'front' | 'back';
+  showSides: Side;
   // What this tile connects to, IDs of other tiles. [0] is negative direction
   // of travel, [1] is postive direction of travel.
   connections: (string | null)[];
@@ -19,12 +21,15 @@ export type RailTile = {
 export const isRailTile = (tile: Tile): tile is RailTile =>
   tile.type === 'straight' || tile.type === 'quarter';
 
+let idx = 20;
+export const makeId = () => (idx++).toString();
+
 export type ChoiceTile = {
   id: string;
   type: 't';
   position: [number, number, number];
   rotation: [number, number, number];
-  showSides: 'all' | 'left' | 'right' | 'front' | 'back';
+  showSides: Side;
   connections: (string | null)[];
   entrances: (number | null)[];
 };
@@ -41,7 +46,7 @@ export const level: Level = [
     type: 'straight',
     position: [0, 0, 0],
     rotation: [0, 0, 0],
-    showSides: 'all',
+    showSides: 'all' as Side,
     connections: ['0', '5'],
     entrances: [1, 1],
   },
@@ -51,7 +56,7 @@ export const level: Level = [
     type: 't',
     position: [0, 1, 0],
     rotation: [0, 0, 0],
-    showSides: 'all',
+    showSides: 'all' as Side,
     connections: ['6', '1', '7'],
     entrances: [0, 1, 1],
   },
@@ -61,7 +66,7 @@ export const level: Level = [
     type: 'quarter',
     position: [-1, 1, 0],
     rotation: [0, 0, Math.PI / 2],
-    showSides: 'all',
+    showSides: 'all' as Side,
     connections: ['5', '10'],
     entrances: [0, 0],
   },
@@ -71,7 +76,7 @@ export const level: Level = [
     type: 'quarter',
     position: [1, 1, 0],
     rotation: [0, 0, Math.PI],
-    showSides: 'all',
+    showSides: 'all' as Side,
     connections: ['8', '5'],
     entrances: [1, 2],
   },
@@ -81,7 +86,7 @@ export const level: Level = [
     type: 'quarter',
     position: [1, 2, 0],
     rotation: [0, 0, -Math.PI / 2],
-    showSides: 'all',
+    showSides: 'all' as Side,
     connections: ['9', '7'],
     entrances: [0, 0],
   },
@@ -91,7 +96,7 @@ export const level: Level = [
     type: 'straight',
     position: [0, 2, 0],
     rotation: [0, 0, Math.PI / 2],
-    showSides: 'all',
+    showSides: 'all' as Side,
     connections: ['8', '10'],
     entrances: [0, 1],
   },
@@ -101,7 +106,7 @@ export const level: Level = [
     type: 'quarter',
     position: [-1, 2, 0],
     rotation: [0, 0, 0],
-    showSides: 'all',
+    showSides: 'all' as Side,
     connections: ['6', '9'],
     entrances: [1, 1],
   },
@@ -112,7 +117,7 @@ export const level: Level = [
     type: 't',
     position: [0, -1, 0],
     rotation: [0, -Math.PI / 2, Math.PI],
-    showSides: 'all',
+    showSides: 'all' as Side,
     connections: ['17', '1', '16'],
     entrances: [1, 0, 1],
   },
@@ -122,7 +127,7 @@ export const level: Level = [
     type: 'quarter',
     position: [0, -1, -1],
     rotation: [0, -Math.PI / 2, 0],
-    showSides: 'all',
+    showSides: 'all' as Side,
     connections: ['110', '0'],
     entrances: [0, 2],
   },
@@ -132,7 +137,7 @@ export const level: Level = [
     type: 'quarter',
     position: [0, -1, 1],
     rotation: [0, Math.PI / 2, 0],
-    showSides: 'all',
+    showSides: 'all' as Side,
     connections: ['18', '0'],
     entrances: [1, 0],
   },
@@ -142,7 +147,7 @@ export const level: Level = [
     type: 'quarter',
     position: [0, -2, 1],
     rotation: [0, Math.PI / 2, Math.PI / 2],
-    showSides: 'all',
+    showSides: 'all' as Side,
     connections: ['19', '17'],
     entrances: [1, 0],
   },
@@ -152,7 +157,7 @@ export const level: Level = [
     type: 'straight',
     position: [0, -2, 0],
     rotation: [Math.PI / 2, 0, 0],
-    showSides: 'all',
+    showSides: 'all' as Side,
     connections: ['110', '18'],
     entrances: [1, 0],
   },
@@ -162,7 +167,7 @@ export const level: Level = [
     type: 'quarter',
     position: [0, -2, -1],
     rotation: [Math.PI / 2, Math.PI / 2, Math.PI / 2],
-    showSides: 'all',
+    showSides: 'all' as Side,
     connections: ['16', '19'],
     entrances: [0, 0],
   },
@@ -186,7 +191,13 @@ export interface GameStore {
   setSelectedTileId: (id: string | null) => void;
   isEditing: boolean;
   setIsEditing: (isEditing: boolean) => void;
+  addTile: (tile: Tile) => void;
+  deleteTile: (tileId: string) => void;
   updateTile: (tileId: string, tile: Partial<Tile>) => void;
+  showCursor: boolean;
+  setShowCursor: (showCursor: boolean) => void;
+  createType: Tile['type'];
+  setCreateType: (createType: Tile['type']) => void;
 
   gameStarted: boolean;
   setGameStarted: (gameStarted: boolean) => void;
@@ -229,6 +240,16 @@ export const useGameStore = create<GameStore>((set) => ({
   setSelectedTileId: (id) => set({ selectedTileId: id }),
   hoverTileId: null,
   setHoverTileId: (id) => set({ hoverTileId: id }),
+  addTile: (tile) =>
+    set((state) => {
+      const level = [...state.level, tile];
+      return { level };
+    }),
+  deleteTile: (tileId: string) =>
+    set((state) => {
+      const level = state.level.filter((tile) => tile.id !== tileId);
+      return { level };
+    }),
   updateTile: (tileId: string, update: Partial<Tile>) =>
     set((state) => {
       const level = state.level.map((tile) =>
@@ -236,6 +257,10 @@ export const useGameStore = create<GameStore>((set) => ({
       );
       return { level };
     }),
+  showCursor: false,
+  setShowCursor: (showCursor) => set({ showCursor }),
+  createType: 'straight',
+  setCreateType: (createType) => set({ createType }),
 
   gameStarted: false,
   setGameStarted: (gameStarted) => set({ gameStarted }),

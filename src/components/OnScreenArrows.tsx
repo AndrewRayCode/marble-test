@@ -2,6 +2,7 @@
 
 import { Html } from '@react-three/drei';
 import { useEffect, useMemo } from 'react';
+import cx from 'classnames';
 
 import { useGameStore } from '@/store/gameStore';
 import { useRefMap } from '@/util/react';
@@ -71,7 +72,10 @@ const OnScreenArrows = () => {
   return arrowPositions.map((_, i) => (
     <group ref={setArrowRef(i)} key={i}>
       <Html>
-        <div className={styles.key} ref={setArrowRef(`${i}_text`)}></div>
+        <div
+          className={cx(styles.screenKey, 'key')}
+          ref={setArrowRef(`${i}_text`)}
+        ></div>
       </Html>
     </group>
   ));
