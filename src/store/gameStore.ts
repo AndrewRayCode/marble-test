@@ -178,6 +178,17 @@ export type ScreenArrows = ScreenArrow[];
 export interface GameStore {
   debug: boolean;
   toggleDebug: () => void;
+
+  hoverTileId: string | null;
+  setHoverTileId: (id: string | null) => void;
+  selectedTileId: string | null;
+  setSelectedTileId: (id: string | null) => void;
+  isEditing: boolean;
+  setIsEditing: (isEditing: boolean) => void;
+  updateTile: (tileId: string, tile: Partial<Tile>) => void;
+
+  gameStarted: boolean;
+  setGameStarted: (gameStarted: boolean) => void;
   currentCurve: CubicBezierCurve3 | null;
   setCurrentCurve: (curve: CubicBezierCurve3) => void;
   level: Level;
@@ -210,6 +221,23 @@ export interface GameStore {
 export const useGameStore = create<GameStore>((set) => ({
   debug: false,
   toggleDebug: () => set((state) => ({ debug: !state.debug })),
+
+  isEditing: true,
+  setIsEditing: (isEditing) => set({ isEditing }),
+  selectedTileId: null,
+  setSelectedTileId: (id) => set({ selectedTileId: id }),
+  hoverTileId: null,
+  setHoverTileId: (id) => set({ hoverTileId: id }),
+  updateTile: (tileId: string, update: Partial<Tile>) =>
+    set((state) => {
+      const level = state.level.map((tile) =>
+        tileId === tile.id ? { ...tile, ...update } : tile,
+      );
+      return { level };
+    }),
+
+  gameStarted: false,
+  setGameStarted: (gameStarted) => set({ gameStarted }),
   currentCurve: null,
   setCurrentCurve: (curve) => set({ currentCurve: curve }),
   level,

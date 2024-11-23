@@ -1,9 +1,11 @@
 'use client';
 
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   TransformControls as TransformControlsImpl,
   OrbitControls as OrbitControlsImpl,
 } from 'three-stdlib';
+import { clamp } from 'three/src/math/MathUtils.js';
 import { Canvas, useThree } from '@react-three/fiber';
 import {
   Environment,
@@ -11,10 +13,9 @@ import {
   Html,
   TransformControls,
 } from '@react-three/drei';
-
-import { useEffect, useMemo, useRef, useState } from 'react';
 import { useFrame } from '@react-three/fiber';
 import { Mesh, Vector2, Vector3 } from 'three';
+
 import { PLAYER_SPEED, SPHERE_RADIUS } from '@/game/constants';
 import {
   curveForChoiceTile,
@@ -31,11 +32,11 @@ import {
   useKeyboardControls,
   useGameStore,
 } from '@/store/gameStore';
-import { clamp } from 'three/src/math/MathUtils.js';
-
 import { toScreen, toWorld } from '@/util/math';
 import OnScreenArrows from './OnScreenArrows';
-import { ForwardRefComponent } from '@react-three/drei/helpers/ts-utils';
+
+import cx from 'classnames';
+import { useRefMap } from '@/util/react';
 
 const lowest = (a: {
   left: number;
@@ -77,6 +78,16 @@ const Game = () => {
   const setNextConnection = useGameStore((state) => state.setNextConnection);
   const keysPressed = useGameStore((state) => state.keysPressed);
   const currentExitRefs = useGameStore((state) => state.currentExitRefs);
+  const gameStarted = useGameStore((state) => state.gameStarted);
+  const setGameStarted = useGameStore((state) => state.setGameStarted);
+
+  const isEditing = useGameStore((state) => state.isEditing);
+  const selectedTileId = useGameStore((state) => state.selectedTileId);
+  const setSelectedTileId = useGameStore((state) => state.setSelectedTileId);
+  const hoverTileId = useGameStore((state) => state.hoverTileId);
+  const setHoverTileId = useGameStore((state) => state.setHoverTileId);
+  const updateTile = useGameStore((state) => state.updateTile);
+  const [tileRefs, setTileRefs] = useRefMap();
 
   useKeyboardControls();
 
@@ -104,14 +115,16 @@ const Game = () => {
     [currentExitRefs, currentTile],
   );
 
-  console.log('render');
   // Start game :(
   useEffect(() => {
-    console.log('Starting game');
-    if (isRailTile(level[0])) {
-      setCurrentCurve(curveForRailTile(level[0]));
+    if (!gameStarted) {
+      setGameStarted(true);
+      console.log('Starting game');
+      if (isRailTile(level[0])) {
+        setCurrentCurve(curveForRailTile(level[0]));
+      }
     }
-  }, [setCurrentCurve, level]);
+  }, [setCurrentCurve, level, gameStarted, setGameStarted]);
 
   useFrame((state, delta) => {
     const {
@@ -330,13 +343,6 @@ const Game = () => {
         />
       </mesh>
 
-      <TransformControls mode="translate" translationSnap={0.5} ref={transform}>
-        <mesh>
-          <boxGeometry args={[1, 1, 1]} />
-          <meshStandardMaterial color="hotpink" wireframe />
-        </mesh>
-      </TransformControls>
-
       {/* On-screen arrows */}
       <OnScreenArrows />
 
@@ -349,6 +355,73 @@ const Game = () => {
           return <Junction key={tile.id} tile={tile} />;
         }
       })}
+
+      {isEditing && (
+        <group>
+          {selectedTileId !== null && (
+            <TransformControls
+              mode="translate"
+              translationSnap={0.5}
+              ref={transform}
+              object={tileRefs.get(selectedTileId)}
+              onChange={(e) => {
+                const target = tileRefs.get(selectedTileId);
+                if (target) {
+                  updateTile(selectedTileId, {
+                    position: [
+                      target.position.x,
+                      target.position.y,
+                      target.position.z,
+                    ],
+                  });
+                }
+              }}
+            ></TransformControls>
+          )}
+
+          {level.map((tile) => {
+            return (
+              <mesh
+                key={tile.id}
+                position={tile.position}
+                onClick={(e) => {
+                  if (tile.id !== selectedTileId) {
+                    e.stopPropagation();
+                    setSelectedTileId(tile.id);
+                  }
+                }}
+                onPointerOver={(e) => {
+                  if (tile.id !== hoverTileId) {
+                    e.stopPropagation();
+                    setHoverTileId(tile.id);
+                  }
+                }}
+                onPointerOut={(e) => {
+                  if (tile.id === hoverTileId) {
+                    e.stopPropagation();
+                    setHoverTileId(null);
+                  }
+                }}
+                ref={setTileRefs(tile.id)}
+              >
+                <boxGeometry args={[1, 1, 1]} />
+                <meshBasicMaterial
+                  opacity={
+                    tile.id === selectedTileId
+                      ? 0.3
+                      : tile.id === hoverTileId
+                        ? 0.2
+                        : 0.01
+                  }
+                  transparent
+                  color={'green'}
+                />
+              </mesh>
+            );
+          })}
+        </group>
+      )}
+
       {debug &&
         level.map((tile) => {
           if (isRailTile(tile)) {
@@ -391,6 +464,7 @@ const Game = () => {
             );
           }
         })}
+
       {debug && currentTile && (
         <mesh position={currentTile.position}>
           <boxGeometry args={[1, 1, 1]} />
@@ -410,6 +484,7 @@ export default function ThreeScene() {
   const playerMomentum = useGameStore((state) => state.playerMomentum);
   // const curveProgress = useStore((state) => state.curveProgress);
   const debug = useGameStore((state) => state.debug);
+  const hoverTileId = useGameStore((state) => state.hoverTileId);
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
@@ -429,7 +504,11 @@ export default function ThreeScene() {
   }, [toggleDebug, level, setCurrentCurve, resetLevel]);
 
   return (
-    <div className="h-screen w-full bg-gray-900">
+    <div
+      className={cx('h-screen w-full bg-gray-900', {
+        'cursor-pointer': hoverTileId !== null,
+      })}
+    >
       <Canvas camera={{ position: [0, 0, 6] }} className="h-full w-full">
         <Game />
       </Canvas>
