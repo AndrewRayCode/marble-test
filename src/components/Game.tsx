@@ -1,17 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type {
-  TransformControls as TransformControlsImpl,
-  OrbitControls as OrbitControlsImpl,
-} from 'three-stdlib';
+import { useEffect, useMemo, useRef } from 'react';
+import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { clamp } from 'three/src/math/MathUtils.js';
 import { Canvas, useThree } from '@react-three/fiber';
 import {
   Environment,
   OrbitControls,
   Html,
-  TransformControls,
+  KeyboardControls,
+  useKeyboardControls,
 } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 import { Mesh, Vector2, Vector3 } from 'three';
@@ -29,14 +27,14 @@ import {
   ScreenArrow,
   ScreenArrows,
   Tile,
-  useKeyboardControls,
   useGameStore,
+  useKeyPress,
 } from '@/store/gameStore';
 import { toScreen, toWorld } from '@/util/math';
 import OnScreenArrows from './OnScreenArrows';
 
 import cx from 'classnames';
-import { useRefMap } from '@/util/react';
+import EditorComponent, { EditorUI } from './Editor';
 
 const lowest = (a: {
   left: number;
@@ -63,8 +61,10 @@ const screenUp = new Vector2(0, -1);
 const screenDown = new Vector2(0, 1);
 
 const Game = () => {
-  const marbleRef = useRef<Mesh>(null);
+  const [, key] = useKeyboardControls();
 
+  const toggleDebug = useGameStore((state) => state.toggleDebug);
+  const resetLevel = useGameStore((state) => state.resetLevel);
   const setScreenArrows = useGameStore((state) => state.setScreenArrows);
   const setCurrentCurve = useGameStore((state) => state.setCurrentCurve);
   const currentCurve = useGameStore((state) => state.currentCurve);
@@ -76,44 +76,30 @@ const Game = () => {
   const setMomentum = useGameStore((state) => state.setMomentum);
   const setEnteredFrom = useGameStore((state) => state.setEnteredFrom);
   const setNextConnection = useGameStore((state) => state.setNextConnection);
-  const keysPressed = useGameStore((state) => state.keysPressed);
   const currentExitRefs = useGameStore((state) => state.currentExitRefs);
   const gameStarted = useGameStore((state) => state.gameStarted);
   const setGameStarted = useGameStore((state) => state.setGameStarted);
-
   const isEditing = useGameStore((state) => state.isEditing);
-  const selectedTileId = useGameStore((state) => state.selectedTileId);
-  const setSelectedTileId = useGameStore((state) => state.setSelectedTileId);
-  const hoverTileId = useGameStore((state) => state.hoverTileId);
-  const setHoverTileId = useGameStore((state) => state.setHoverTileId);
-  const updateTile = useGameStore((state) => state.updateTile);
-  const [tileRefs, setTileRefs] = useRefMap();
+  const setIsEditing = useGameStore((state) => state.setIsEditing);
 
-  useKeyboardControls();
-
+  const marbleRef = useRef<Mesh>(null);
   const orbit = useRef<OrbitControlsImpl>(null);
-  const transform = useRef<TransformControlsImpl>(null);
-  const [mode, setMode] = useState('translate');
-  useEffect(() => {
-    if (transform.current) {
-      const controls = transform.current;
-      controls.setMode(mode);
-      const callback = (event: { value: unknown }) => {
-        orbit.current!.enabled = !event.value;
-      };
-      // @ts-expect-error - types are wrong in addEventListener
-      controls.addEventListener('dragging-changed', callback);
-      // @ts-expect-error - types are wronng in addEventListener
-      return () => controls.removeEventListener('dragging-changed', callback);
-    }
-  }, [mode]);
-
   const { camera, viewport } = useThree();
 
   const arrowPositions = useMemo(
     () => (currentTile?.type === 't' ? currentExitRefs.map(toWorld) : []),
     [currentExitRefs, currentTile],
   );
+
+  useKeyPress('edit', () => setIsEditing(!isEditing));
+  useKeyPress('debug', toggleDebug);
+  useKeyPress('reset', () => {
+    console.log('Resetting game!');
+    resetLevel(level);
+    if (isRailTile(level[0])) {
+      setCurrentCurve(curveForRailTile(level[0]));
+    }
+  });
 
   // Start game :(
   useEffect(() => {
@@ -201,9 +187,9 @@ const Game = () => {
 
     if (marbleRef.current && currentCurve && currentTile) {
       if (playerMomentum === 0) {
-        if (keysPressed.has('ArrowUp')) {
+        if (key().up) {
           setMomentum(PLAYER_SPEED);
-        } else if (keysPressed.has('ArrowDown')) {
+        } else if (key().down) {
           setMomentum(-PLAYER_SPEED);
         }
       }
@@ -224,10 +210,10 @@ const Game = () => {
         if (currentTile.type == 't') {
           // We are going towards, and have landed on, the center
           if (nextConnection === -1) {
-            const isDown = keysPressed.has('ArrowDown') && directions.down;
-            const isLeft = keysPressed.has('ArrowLeft') && directions.left;
-            const isRight = keysPressed.has('ArrowRight') && directions.right;
-            const isUp = keysPressed.has('ArrowUp') && directions.up;
+            const isDown = key().down && directions.down;
+            const isLeft = key().left && directions.left;
+            const isRight = key().right && directions.right;
+            const isUp = key().up && directions.up;
 
             let nextConnection: number | undefined;
             if (isDown || isLeft || isRight || isUp) {
@@ -357,69 +343,9 @@ const Game = () => {
       })}
 
       {isEditing && (
-        <group>
-          {selectedTileId !== null && (
-            <TransformControls
-              mode="translate"
-              translationSnap={0.5}
-              ref={transform}
-              object={tileRefs.get(selectedTileId)}
-              onChange={(e) => {
-                const target = tileRefs.get(selectedTileId);
-                if (target) {
-                  updateTile(selectedTileId, {
-                    position: [
-                      target.position.x,
-                      target.position.y,
-                      target.position.z,
-                    ],
-                  });
-                }
-              }}
-            ></TransformControls>
-          )}
-
-          {level.map((tile) => {
-            return (
-              <mesh
-                key={tile.id}
-                position={tile.position}
-                onClick={(e) => {
-                  if (tile.id !== selectedTileId) {
-                    e.stopPropagation();
-                    setSelectedTileId(tile.id);
-                  }
-                }}
-                onPointerOver={(e) => {
-                  if (tile.id !== hoverTileId) {
-                    e.stopPropagation();
-                    setHoverTileId(tile.id);
-                  }
-                }}
-                onPointerOut={(e) => {
-                  if (tile.id === hoverTileId) {
-                    e.stopPropagation();
-                    setHoverTileId(null);
-                  }
-                }}
-                ref={setTileRefs(tile.id)}
-              >
-                <boxGeometry args={[1, 1, 1]} />
-                <meshBasicMaterial
-                  opacity={
-                    tile.id === selectedTileId
-                      ? 0.3
-                      : tile.id === hoverTileId
-                        ? 0.2
-                        : 0.01
-                  }
-                  transparent
-                  color={'green'}
-                />
-              </mesh>
-            );
-          })}
-        </group>
+        <EditorComponent
+          setOrbitEnabled={(e) => (orbit.current!.enabled = e)}
+        />
       )}
 
       {debug &&
@@ -477,47 +403,35 @@ const Game = () => {
 };
 
 export default function ThreeScene() {
-  const toggleDebug = useGameStore((state) => state.toggleDebug);
-  const level = useGameStore((state) => state.level);
-  const setCurrentCurve = useGameStore((state) => state.setCurrentCurve);
-  const resetLevel = useGameStore((state) => state.resetLevel);
   const playerMomentum = useGameStore((state) => state.playerMomentum);
   // const curveProgress = useStore((state) => state.curveProgress);
   const debug = useGameStore((state) => state.debug);
-  const hoverTileId = useGameStore((state) => state.hoverTileId);
-
-  useEffect(() => {
-    const listener = (event: KeyboardEvent) => {
-      if (event.key === 'd') {
-        toggleDebug();
-      }
-      if (event.key === 'r') {
-        console.log('Resetting game!');
-        resetLevel(level);
-        if (isRailTile(level[0])) {
-          setCurrentCurve(curveForRailTile(level[0]));
-        }
-      }
-    };
-    window.addEventListener('keydown', listener);
-    return () => window.removeEventListener('keydown', listener);
-  }, [toggleDebug, level, setCurrentCurve, resetLevel]);
 
   return (
-    <div
-      className={cx('h-screen w-full bg-gray-900', {
-        'cursor-pointer': hoverTileId !== null,
-      })}
-    >
-      <Canvas camera={{ position: [0, 0, 6] }} className="h-full w-full">
-        <Game />
-      </Canvas>
-      {debug && (
-        <div className="absolute bottom-0 right-0 h-16 w-64 z-2 bg-slate-900 shadow-lg rounded-lg p-2 text-sm">
-          <div>momentum: {playerMomentum}</div>
-          {/* <div>curve progress: {Math.round(curveProgress * 10) / 10}</div> */}
-        </div>
-      )}
+    <div className={cx('h-screen w-full bg-gray-900')}>
+      <EditorUI>
+        <KeyboardControls
+          map={[
+            { name: 'up', keys: ['ArrowUp'] },
+            { name: 'down', keys: ['ArrowDown'] },
+            { name: 'left', keys: ['ArrowLeft'] },
+            { name: 'right', keys: ['ArrowRight'] },
+            { name: 'debug', keys: ['d'] },
+            { name: 'reset', keys: ['r'] },
+            { name: 'edit', keys: ['e'] },
+          ]}
+        >
+          <Canvas camera={{ position: [0, 0, 6] }} className="h-full w-full">
+            <Game />
+          </Canvas>
+        </KeyboardControls>
+        {debug && (
+          <div className="absolute bottom-0 right-0 h-16 w-64 z-2 bg-slate-900 shadow-lg rounded-lg p-2 text-sm">
+            <div>momentum: {playerMomentum}</div>
+            {/* <div>curve progress: {Math.round(curveProgress * 10) / 10}</div> */}
+          </div>
+        )}
+      </EditorUI>
     </div>
   );
 }

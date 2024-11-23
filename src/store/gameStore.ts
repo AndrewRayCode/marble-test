@@ -1,3 +1,4 @@
+import { useKeyboardControls } from '@react-three/drei';
 import { useEffect } from 'react';
 import { CubicBezierCurve3, Group, Vector3 } from 'three';
 import { create } from 'zustand';
@@ -305,27 +306,16 @@ export const useGameStore = create<GameStore>((set) => ({
     }),
 }));
 
-export const useKeyboardControls = () => {
-  const setKeyPressed = useGameStore((state) => state.setKeyPressed);
-
+export const useKeyPress = (key: string, action: () => void) => {
+  const [sub] = useKeyboardControls();
   useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.repeat) return; // Ignore key repeat events
-      setKeyPressed(event.key, true);
-    };
-
-    const handleKeyUp = (event: KeyboardEvent) => {
-      setKeyPressed(event.key, false);
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, [setKeyPressed]);
-
-  return useGameStore;
+    return sub(
+      (state) => state[key],
+      (pressed) => {
+        if (pressed) {
+          action();
+        }
+      },
+    );
+  }, [sub, action, key]);
 };
