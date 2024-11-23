@@ -1,5 +1,9 @@
 'use client';
 
+import type {
+  TransformControls as TransformControlsImpl,
+  OrbitControls as OrbitControlsImpl,
+} from 'three-stdlib';
 import { Canvas, useThree } from '@react-three/fiber';
 import {
   Environment,
@@ -31,6 +35,7 @@ import { clamp } from 'three/src/math/MathUtils.js';
 
 import { toScreen, toWorld } from '@/util/math';
 import OnScreenArrows from './OnScreenArrows';
+import { ForwardRefComponent } from '@react-three/drei/helpers/ts-utils';
 
 const lowest = (a: {
   left: number;
@@ -75,17 +80,19 @@ const Game = () => {
 
   useKeyboardControls();
 
-  const orbit = useRef<typeof OrbitControls>();
-  const transform = useRef<typeof TransformControls>();
+  const orbit = useRef<OrbitControlsImpl>(null);
+  const transform = useRef<TransformControlsImpl>(null);
   const [mode, setMode] = useState('translate');
   useEffect(() => {
     if (transform.current) {
       const controls = transform.current;
       controls.setMode(mode);
-      const callback = (event) => {
-        orbit.current.enabled = !event.value;
+      const callback = (event: { value: unknown }) => {
+        orbit.current!.enabled = !event.value;
       };
+      // @ts-expect-error - types are wrong in addEventListener
       controls.addEventListener('dragging-changed', callback);
+      // @ts-expect-error - types are wronng in addEventListener
       return () => controls.removeEventListener('dragging-changed', callback);
     }
   }, [mode]);
@@ -323,7 +330,7 @@ const Game = () => {
         />
       </mesh>
 
-      <TransformControls mode="translate" translationSnap={0.5}>
+      <TransformControls mode="translate" translationSnap={0.5} ref={transform}>
         <mesh>
           <boxGeometry args={[1, 1, 1]} />
           <meshStandardMaterial color="hotpink" wireframe />
