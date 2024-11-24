@@ -1,10 +1,10 @@
 import { useCallback, useRef } from 'react';
 
-const useRefMap = () => {
-  const itemsRef = useRef(new Map());
+const useRefMap = <T = unknown>() => {
+  const itemsRef = useRef(new Map<string | number, T>());
 
   const setRef = useCallback(
-    (key: string | number) => (node: unknown) => {
+    (key: string | number) => (node: T) => {
       if (node) {
         itemsRef.current.set(key, node);
       } else {

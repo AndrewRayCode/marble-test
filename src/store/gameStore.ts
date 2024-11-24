@@ -1,14 +1,20 @@
+import { computeTile } from '@/util/curves';
 import { deg2Rad } from '@/util/math';
 import { useKeyboardControls } from '@react-three/drei';
 import { useEffect } from 'react';
-import { CubicBezierCurve3, Group, Vector3 } from 'three';
+import { CubicBezierCurve3, Vector3 } from 'three';
 import { create } from 'zustand';
 
 export type Side = 'left' | 'right' | 'front' | 'back';
 
-export type Trannsform = {
+export type Transform = {
   position?: [number, number, number];
   rotation?: [number, number, number];
+};
+
+export type TileComputed = {
+  curves: CubicBezierCurve3[];
+  exits: Vector3[];
 };
 
 export type Action = {
@@ -262,14 +268,15 @@ export interface GameStore {
   // Game state
   gameStarted: boolean;
   setGameStarted: (gameStarted: boolean) => void;
-  currentCurve: CubicBezierCurve3 | null;
-  setCurrentCurve: (curve: CubicBezierCurve3) => void;
   level: Level;
   setLevel: (level: Level) => void;
   curveProgress: number;
   setCurveProgress: (progress: number) => void;
   currentTile: TrackTile | null;
   setCurrentTile: (tile: TrackTile) => void;
+  tilesComputed: Record<string, TileComputed>;
+  setTileComputed: (tileId: string, computed: TileComputed) => void;
+  setTilesComputed: (tiles: Record<string, TileComputed>) => void;
 
   playerMomentum: number;
   setMomentum: (delta: number) => void;
@@ -277,8 +284,8 @@ export interface GameStore {
   setEnteredFrom: (entrance: number) => void;
   nextConnection: number | null;
   setNextConnection: (entrance: number | null) => void;
-  currentExitRefs: Group[];
-  setCurrentExitRefs: (currentExitRefs: Group[]) => void;
+  exitPositions: Record<string | number, Vector3[]>;
+  setExitPositions: (tileId: string | number, exitPositions: Vector3[]) => void;
 
   booleanSwitches: Record<string, boolean>;
   setBooleanSwitch: (key: string, value: boolean) => void;
@@ -293,9 +300,9 @@ export interface GameStore {
   ) => void;
   applyAction: (action: Action) => void;
 
-  transforms: Record<string, Trannsform>;
-  setTransform: (id: string, transform: Trannsform) => void;
-  clearTransform: (id: string, key?: keyof Trannsform) => void;
+  transforms: Record<string, Transform>;
+  setTransform: (id: string, transform: Transform) => void;
+  clearTransform: (id: string, key?: keyof Transform) => void;
 
   // Game UI state
   arrowPositions: Vector3[];
@@ -340,14 +347,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   gameStarted: false,
   setGameStarted: (gameStarted) => set({ gameStarted }),
-  currentCurve: null,
-  setCurrentCurve: (curve) => set({ currentCurve: curve }),
   level,
   setLevel: (level) => set({ level }),
   curveProgress: 0,
   setCurveProgress: (progress) => set({ curveProgress: progress }),
   currentTile: level[0] as TrackTile,
   setCurrentTile: (tile) => set({ currentTile: tile }),
+  tilesComputed: {},
+  setTileComputed: (tileId, computed) =>
+    set((state) => ({
+      tilesComputed: {
+        ...state.tilesComputed,
+        [tileId]: computed,
+      },
+    })),
+  setTilesComputed: (tilesComputed) => set({ tilesComputed }),
 
   playerMomentum: 0,
   setMomentum: (playerMomentum) =>
@@ -361,8 +375,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
   nextConnection: -1,
   setNextConnection: (nextConnection) => set({ nextConnection }),
 
-  currentExitRefs: [],
-  setCurrentExitRefs: (currentExitRefs) => set({ currentExitRefs }),
+  exitPositions: {},
+  setExitPositions: (tileId, exitPositions) =>
+    set((state) => ({
+      exitPositions: {
+        ...state.exitPositions,
+        [tileId]: exitPositions,
+      },
+    })),
 
   booleanSwitches: {},
   setBooleanSwitch: (key, value) =>
@@ -387,19 +407,23 @@ export const useGameStore = create<GameStore>((set, get) => ({
   applyAction: (action) => {
     const s = get();
     action.targetTiles.forEach((targetId) => {
-      const target = level.find((t) => t.id === targetId);
+      const target = level.find((t) => t.id === targetId)!;
       if (action!.type === 'rotation') {
         const start = s.transforms[targetId]?.rotation ||
           target?.rotation || [0, 0, 0];
         const { axis, degrees } = action;
         const rad = deg2Rad(degrees);
+        const rotation = [
+          start[0] + (axis === 'x' ? rad : 0),
+          start[1] + (axis === 'y' ? rad : 0),
+          start[2] + (axis === 'z' ? rad : 0),
+        ] as [number, number, number];
+        // TODO: the updated ball rotation path happens by reading from the
+        // transforms at tile calculation time. Once a rotation is complete,
+        // need to figure out what entrances it breaks, and completes!
         s.setTransform(targetId, {
           ...s.transforms[targetId],
-          rotation: [
-            start[0] + (axis === 'x' ? rad : 0),
-            start[1] + (axis === 'y' ? rad : 0),
-            start[2] + (axis === 'z' ? rad : 0),
-          ],
+          rotation,
         });
       }
     });
@@ -437,14 +461,27 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setScreenArrows: (screenArrows) => set({ screenArrows }),
 
   resetLevel: (level) =>
-    set({
-      level,
-      curveProgress: 0,
-      enteredFrom: -1,
-      nextConnection: -1,
-      playerMomentum: 0,
-      currentCurve: null,
-      currentTile: level[0] as TrackTile,
+    set((state) => {
+      const tilesComputed = level.reduce<Record<string, TileComputed>>(
+        (acc, tile) =>
+          isRailTile(tile) || isJunctionTile(tile)
+            ? {
+                ...acc,
+                [tile.id]: computeTile(tile),
+              }
+            : acc,
+        {},
+      );
+
+      return {
+        level,
+        curveProgress: 0,
+        enteredFrom: -1,
+        nextConnection: -1,
+        playerMomentum: 0,
+        tilesComputed,
+        currentTile: level[0] as TrackTile,
+      };
     }),
 }));
 

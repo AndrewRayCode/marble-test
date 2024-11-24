@@ -10,6 +10,7 @@ import {
   RailTile,
   Side,
   StrTrip,
+  Tile,
   TileBase,
   useGameStore,
   useKeyPress,
@@ -55,7 +56,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
   const showCursor = useGameStore((state) => state.showCursor);
   const setShowCursor = useGameStore((state) => state.setShowCursor);
   const createType = useGameStore((state) => state.createType);
-  const [tileRefs, setTileRefs] = useRefMap();
+  const [tileRefs, setTileRefs] = useRefMap<Mesh>();
 
   const selectedTile = level.find((tile) => tile.id === selectedTileId);
 
@@ -214,7 +215,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
           translationSnap={0.5}
           size={0.7}
           ref={transform}
-          object={tileRefs.get(selectedTileId)}
+          object={tileRefs.get(selectedTileId)!}
           rotationSnap={Math.PI / 4}
           onPointerOver={(e) => {
             setOverTransform(true);
@@ -223,7 +224,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
             setOverTransform(false);
           }}
           onChange={(e) => {
-            const target = tileRefs.get(selectedTileId);
+            const target = tileRefs.get(selectedTileId)!;
             if (target) {
               updateTile(
                 selectedTileId,

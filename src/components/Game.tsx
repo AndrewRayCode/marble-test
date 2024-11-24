@@ -16,13 +16,7 @@ import {
 import { useFrame } from '@react-three/fiber';
 
 import { PLAYER_SPEED, SPHERE_RADIUS } from '@/game/constants';
-import {
-  curveForChoiceTile,
-  curveForRailTile,
-  QuarterTurn,
-  Straightaway,
-  Junction,
-} from '@/components/Tiles/curves';
+import { curveForChoiceTile, curveForRailTile } from '@/util/curves';
 import {
   isRailTile,
   ScreenArrow,
@@ -41,6 +35,9 @@ import buttonSfx from '@/public/button.mp3';
 
 import cx from 'classnames';
 import Toggle from './Tiles/Toggle';
+import Straightaway from './Tiles/Straightaway';
+import QuarterTurn from './Tiles/QuarterTurn';
+import Junction from './Tiles/Junction';
 
 const lowest = (a: {
   left: number;
@@ -72,8 +69,9 @@ const Game = () => {
   const toggleDebug = useGameStore((state) => state.toggleDebug);
   const resetLevel = useGameStore((state) => state.resetLevel);
   const setScreenArrows = useGameStore((state) => state.setScreenArrows);
-  const setCurrentCurve = useGameStore((state) => state.setCurrentCurve);
-  const currentCurve = useGameStore((state) => state.currentCurve);
+  // TODO: current curve index in case of t junction
+  // const setCurrentCurve = useGameStore((state) => state.setCurrentCurve);
+  // const currentCurve = useGameStore((state) => state.currentCurve);
   const setCurveProgress = useGameStore((state) => state.setCurveProgress);
   const setCurrentTile = useGameStore((state) => state.setCurrentTile);
   const debug = useGameStore((state) => state.debug);
@@ -82,19 +80,26 @@ const Game = () => {
   const setMomentum = useGameStore((state) => state.setMomentum);
   const setEnteredFrom = useGameStore((state) => state.setEnteredFrom);
   const setNextConnection = useGameStore((state) => state.setNextConnection);
-  const currentExitRefs = useGameStore((state) => state.currentExitRefs);
+  // const currentExitRefs = useGameStore((state) => state.currentExitRefs);
   const gameStarted = useGameStore((state) => state.gameStarted);
   const setGameStarted = useGameStore((state) => state.setGameStarted);
   const isEditing = useGameStore((state) => state.isEditing);
   const setIsEditing = useGameStore((state) => state.setIsEditing);
+  const tilesComputed = useGameStore((state) => state.tilesComputed);
 
   const marbleRef = useRef<Mesh>(null);
   const orbit = useRef<OrbitControlsImpl>(null);
   const { camera, viewport } = useThree();
 
+  const currentCurve = useMemo(
+    () => level.find((t) => t.id === currentTile?.id),
+    [currentTile, level],
+  );
+
   const arrowPositions = useMemo(
-    () => (currentTile?.type === 't' ? currentExitRefs.map(toWorld) : []),
-    [currentExitRefs, currentTile],
+    () =>
+      currentTile?.type === 't' ? tilesComputed[currentTile.id].exits : [],
+    [tilesComputed, currentTile],
   );
 
   useKeyPress('edit', () => setIsEditing(!isEditing));
@@ -102,9 +107,9 @@ const Game = () => {
   useKeyPress('reset', () => {
     console.log('Resetting game!');
     resetLevel(level);
-    if (isRailTile(level[0])) {
-      setCurrentCurve(curveForRailTile(level[0]));
-    }
+    // if (isRailTile(level[0])) {
+    //   setCurrentCurve(curveForRailTile(level[0]));
+    // }
   });
 
   const [playBtnSfx] = useSound(buttonSfx);
@@ -114,11 +119,12 @@ const Game = () => {
     if (!gameStarted) {
       setGameStarted(true);
       console.log('Starting game');
-      if (isRailTile(level[0])) {
-        setCurrentCurve(curveForRailTile(level[0]));
-      }
+      resetLevel(level);
+      // if (isRailTile(level[0])) {
+      //   setCurrentCurve(curveForRailTile(level[0]));
+      // }
     }
-  }, [setCurrentCurve, level, gameStarted, setGameStarted]);
+  }, [level, gameStarted, setGameStarted, resetLevel]);
 
   useFrame((state, delta) => {
     const s = useGameStore.getState();
@@ -306,10 +312,12 @@ const Game = () => {
               setNextConnection(nextConnection);
               // We are moving out from T so negative momentum
               setMomentum(-PLAYER_SPEED);
+              const nextRotation =
+                s.transforms[currentTile.id]?.rotation || currentTile.rotation;
               setCurrentCurve(
                 // reverseBezierCurve(curveForChoiceTile(currentTile, 0)),
                 // Set the path to the leftmost T arm
-                curveForChoiceTile(currentTile, nextConnection),
+                curveForChoiceTile(currentTile, nextConnection, nextRotation),
               );
               // Start at the far end of the curve!
               setCurveProgress(1.0);
@@ -332,6 +340,7 @@ const Game = () => {
           nextEntrance = currentTile.entrances[nextIdx];
         }
 
+        // If we detected there is somewhere to go...
         if (nextId !== undefined || nextEntrance !== undefined) {
           if (nextId === null || nextEntrance == null) {
             console.log('no next!');
@@ -350,9 +359,12 @@ const Game = () => {
 
           setCurrentTile(nextTile);
 
+          const nextRotation =
+            s.transforms[nextTile.id]?.rotation || nextTile.rotation;
+
           // If connecting to a striaght tile
           if (isRailTile(nextTile)) {
-            setCurrentCurve(curveForRailTile(nextTile));
+            setCurrentCurve(curveForRailTile(nextTile, nextRotation));
             setEnteredFrom(nextEntrance);
             // Go towards other connection
             setNextConnection(nextEntrance === 0 ? 1 : 0);
@@ -361,7 +373,9 @@ const Game = () => {
             setCurveProgress(nextEntrance === 0 ? 0 : 1);
             // If connecting to a T junction
           } else if (nextTile.type === 't') {
-            setCurrentCurve(curveForChoiceTile(nextTile, nextEntrance));
+            setCurrentCurve(
+              curveForChoiceTile(nextTile, nextEntrance, nextRotation),
+            );
             setEnteredFrom(nextEntrance);
             // We are entering a choice tile - the next connection is t center
             setNextConnection(-1);
