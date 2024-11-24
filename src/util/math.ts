@@ -29,3 +29,18 @@ export const toScreen = (
   const y = (-vector.y * 0.5 + 0.5) * viewport.height;
   return { x, y };
 };
+
+// Fast 3D distance calculation
+export const distance3D = (
+  x1: number,
+  y1: number,
+  z1: number,
+  x2: number,
+  y2: number,
+  z2: number,
+): number => {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const dz = z2 - z1;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+};

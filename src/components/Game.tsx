@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect, useMemo, useRef } from 'react';
+import useSound from 'use-sound';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
+import { Mesh, Vector2, Vector3 } from 'three';
 import { clamp } from 'three/src/math/MathUtils.js';
 import { Canvas, useThree } from '@react-three/fiber';
 import {
@@ -12,7 +14,6 @@ import {
   useKeyboardControls,
 } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
-import { Mesh, Vector2, Vector3 } from 'three';
 
 import { PLAYER_SPEED, SPHERE_RADIUS } from '@/game/constants';
 import {
@@ -21,20 +22,25 @@ import {
   QuarterTurn,
   Straightaway,
   Junction,
-} from '@/game/curves';
+} from '@/components/Tiles/curves';
 import {
   isRailTile,
   ScreenArrow,
   ScreenArrows,
+  TarkTile,
   Tile,
+  TrackTile,
   useGameStore,
   useKeyPress,
 } from '@/store/gameStore';
 import { toScreen, toWorld } from '@/util/math';
 import OnScreenArrows from './OnScreenArrows';
+import EditorComponent, { EditorUI } from './Editor/Editor';
+
+import buttonSfx from '@/public/button.mp3';
 
 import cx from 'classnames';
-import EditorComponent, { EditorUI } from './Editor/Editor';
+import Toggle from './Tiles/Toggle';
 
 const lowest = (a: {
   left: number;
@@ -101,6 +107,8 @@ const Game = () => {
     }
   });
 
+  const [playBtnSfx] = useSound(buttonSfx);
+
   // Start game :(
   useEffect(() => {
     if (!gameStarted) {
@@ -113,13 +121,7 @@ const Game = () => {
   }, [setCurrentCurve, level, gameStarted, setGameStarted]);
 
   useFrame((state, delta) => {
-    const {
-      enteredFrom,
-      curveProgress,
-      currentTile,
-      playerMomentum,
-      nextConnection,
-    } = useGameStore.getState();
+    const s = useGameStore.getState();
 
     const tileScreen = toScreen(
       new Vector3(...currentTile!.position),
@@ -168,8 +170,8 @@ const Game = () => {
       {} as Record<string, ScreenArrow>,
     );
 
-    let nextTile: Tile | undefined;
-    const isPositive = playerMomentum >= 0;
+    let nextTile: TrackTile | undefined;
+    const isPositive = s.playerMomentum >= 0;
 
     // Type safe bail-out for later, like falling out of level
     if (!currentTile) {
@@ -177,8 +179,8 @@ const Game = () => {
     }
 
     const progress = clamp(
-      curveProgress +
-        playerMomentum * delta * (currentTile.type === 't' ? 2.0 : 1.0),
+      s.curveProgress +
+        s.playerMomentum * delta * (currentTile.type === 't' ? 2.0 : 1.0),
       0,
       1,
     );
@@ -186,7 +188,7 @@ const Game = () => {
     setCurveProgress(progress);
 
     if (marbleRef.current && currentCurve && currentTile) {
-      if (playerMomentum === 0) {
+      if (s.playerMomentum === 0) {
         if (key().up) {
           setMomentum(PLAYER_SPEED);
         } else if (key().down) {
@@ -200,6 +202,37 @@ const Game = () => {
       // Update the sphere's position
       marbleRef.current.position.copy(point);
 
+      level
+        .filter((t): t is TarkTile => t.type === 'tark')
+        .forEach((tark) => {
+          const isNear = point.distanceTo(new Vector3(...tark.position)) < 0.2;
+          const on = s.booleanSwitches[tark.id];
+          const enabled = s.enabledBooleanSwitchesFor[-1]?.[tark.id] !== false;
+          // Rolling over toggles
+          if (tark.actionType === 'toggle') {
+            if (enabled && isNear) {
+              playBtnSfx();
+              s.setEnabledBooleanSwitchesFor(-1, tark.id, false);
+              s.setBooleanSwitch(tark.id, !on);
+            }
+            if (!enabled && !isNear) {
+              s.setEnabledBooleanSwitchesFor(-1, tark.id, true);
+            }
+            // Need to stay over
+          } else if (tark.actionType === 'hold') {
+            if (enabled && isNear) {
+              playBtnSfx();
+              s.setEnabledBooleanSwitchesFor(-1, tark.id, false);
+              s.setBooleanSwitch(tark.id, !on);
+            }
+            if (!enabled && !isNear) {
+              playBtnSfx();
+              s.setEnabledBooleanSwitchesFor(-1, tark.id, true);
+              s.setBooleanSwitch(tark.id, !on);
+            }
+          }
+        });
+
       let nextIdx: number | null | undefined;
       let nextId: string | null | undefined;
       let nextEntrance: number | null | undefined;
@@ -209,7 +242,7 @@ const Game = () => {
         // We have landed on the junction in the middle of the T
         if (currentTile.type == 't') {
           // We are going towards, and have landed on, the center
-          if (nextConnection === -1) {
+          if (s.nextConnection === -1) {
             const isDown = key().down && directions.down;
             const isLeft = key().left && directions.left;
             const isRight = key().right && directions.right;
@@ -250,13 +283,13 @@ const Game = () => {
               setCurveProgress(1.0);
               // We are at the t junction, we came from the bottom, and no keys
               // were pressed, so stop!
-            } else if (playerMomentum !== 0) {
+            } else if (s.playerMomentum !== 0) {
               setMomentum(0);
             }
             // We are getting the hell out of here
-          } else if (enteredFrom === -1) {
-            nextId = currentTile.connections[nextConnection!];
-            nextEntrance = currentTile.entrances[nextConnection!];
+          } else if (s.enteredFrom === -1) {
+            nextId = currentTile.connections[s.nextConnection!];
+            nextEntrance = currentTile.entrances[s.nextConnection!];
           }
         } else {
           // We're on a straightaway
@@ -273,7 +306,9 @@ const Game = () => {
             // fall out of level!
             return;
           } else {
-            nextTile = level.find((tile) => tile.id === nextId)!;
+            nextTile = level.find(
+              (tile): tile is TrackTile => tile.id === nextId,
+            )!;
           }
 
           if (!nextTile) {
@@ -339,6 +374,8 @@ const Game = () => {
           return <QuarterTurn key={tile.id} tile={tile} />;
         } else if (tile.type === 't') {
           return <Junction key={tile.id} tile={tile} />;
+        } else if (tile.type === 'tark') {
+          return <Toggle key={tile.id} tile={tile} />;
         }
       })}
 

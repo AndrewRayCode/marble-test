@@ -1,19 +1,23 @@
 'use client';
 
-import { use, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { TransformControls as TransformControlsImpl } from 'three-stdlib';
-import {
-  TransformControls,
-  Grid,
-  KeyboardControls,
-  Html,
-} from '@react-three/drei';
+import { TransformControls, Grid, Html } from '@react-three/drei';
 
-import { makeId, Side, useGameStore, useKeyPress } from '@/store/gameStore';
+import {
+  makeId,
+  NumTrip,
+  RailTile,
+  Side,
+  StrTrip,
+  TileBase,
+  useGameStore,
+  useKeyPress,
+} from '@/store/gameStore';
 
 import cx from 'classnames';
 import { useRefMap } from '@/util/react';
-import { DoubleSide, Euler, Mesh, PlaneGeometry, Vector3 } from 'three';
+import { DoubleSide, Euler, Mesh, Vector3 } from 'three';
 
 import styles from './editor.module.css';
 
@@ -169,21 +173,35 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
           ref={cursorRef}
           position={cursorSnappedPosition}
           onClick={(e) => {
-            addTile({
+            const base: TileBase = {
               id: makeId(),
-              type: createType,
               position: cursorSnappedPosition,
               rotation: [0, 0, 0],
-              showSides: 'all' as Side,
-              connections:
-                createType === 'straight' || createType === 'quarter'
-                  ? [null, null]
-                  : [null, null, null],
-              entrances:
-                createType === 'straight' || createType === 'quarter'
-                  ? [null, null]
-                  : [null, null, null],
-            });
+              type: '',
+            };
+            if (createType === 'straight' || createType === 'quarter') {
+              addTile({
+                ...base,
+                type: createType,
+                showSides: 'all' as Side,
+                connections: [null, null],
+                entrances: [null, null],
+              });
+            } else if (createType === 't') {
+              addTile({
+                ...base,
+                type: createType,
+                showSides: 'all' as Side,
+                connections: [null, null, null],
+                entrances: [null, null, null],
+              });
+            } else if (createType === 'tark') {
+              addTile({
+                ...base,
+                type: createType,
+                actionType: 'toggle',
+              });
+            }
           }}
         >
           <boxGeometry args={[1, 1, 1]} />
@@ -405,85 +423,94 @@ export const EditorUI = ({
         >
           <div className="mb-3">Id: {selectedTile.id}</div>
           <div className="mb-3">Type: {selectedTile.type}</div>
-          <div className="mb-3">
-            Connections: {selectedTile.connections.join(', ')}
-          </div>
-          <div className="mb-3">
-            Entrances: {selectedTile.entrances.join(', ')}
-          </div>
-          <div className="mb-3">
-            <label className="mb-1 block">Sides</label>
-            <select
-              className={cx(styles.input, 'mb-2 w-full')}
-              value={selectedTile.showSides}
-              onChange={(e) => {
-                updateTile(selectedTileId, {
-                  showSides: e.target.value as Side,
-                });
-              }}
-            >
-              <option value="all">All</option>
-              <option value="top">Top</option>
-              <option value="bottom">Bottom</option>
-              <option value="left">Left</option>
-              <option value="right">Right</option>
-              <option value="front">Front</option>
-              <option value="back">Back</option>
-            </select>
-          </div>
-          <div>
-            <label className="mb-2 block">Connections</label>
-            <div
-              className={cx(`grid gap-2`, {
-                'grid-cols-2': selectedTile.connections.length === 2,
-                'grid-cols-3': selectedTile.connections.length === 3,
-              })}
-            >
-              {selectedTile.connections.map((connection, i) => {
-                return (
-                  <div key={i}>
-                    <label className="mb-1 block text-xs ">
-                      Connection {i}
-                    </label>
-                    <input
-                      className={cx(styles.input, 'mb-2 w-full')}
-                      value={connection!}
-                      onChange={(e) => {
-                        updateTile(selectedTileId, {
-                          connections: selectedTile.connections.map((c, j) =>
-                            i === j ? e.target.value : c,
-                          ),
-                        });
-                      }}
-                      type="text"
-                    />
-                    <label className="mb-1 block text-xs">Other Entrance</label>
-                    <select
-                      className={cx(styles.input, 'mb-2 w-full')}
-                      value={selectedTile.entrances[i]!}
-                      onChange={(e) => {
-                        updateTile(selectedTileId, {
-                          entrances: selectedTile.entrances.map((c, j) =>
-                            i === j ? parseInt(e.target.value) : c,
-                          ),
-                        });
-                      }}
-                    >
-                      {level
-                        .find((tile) => tile.id === connection)
-                        ?.entrances.map((_, i) => {
-                          return (
-                            <option key={i} value={i}>
-                              {i}
-                            </option>
-                          );
-                        })}
-                    </select>
-                  </div>
-                );
-              })}
+          {'connections' in selectedTile && (
+            <div>
+              <div className="mb-3">
+                Connections: {selectedTile.connections.join(', ')}
+              </div>
+              <div className="mb-3">
+                Entrances: {selectedTile.entrances.join(', ')}
+              </div>
+              <div className="mb-3">
+                <label className="mb-1 block">Sides</label>
+                <select
+                  className={cx(styles.input, 'mb-2 w-full')}
+                  value={selectedTile.showSides}
+                  onChange={(e) => {
+                    updateTile(selectedTileId, {
+                      showSides: e.target.value as Side,
+                    });
+                  }}
+                >
+                  <option value="all">All</option>
+                  <option value="top">Top</option>
+                  <option value="bottom">Bottom</option>
+                  <option value="left">Left</option>
+                  <option value="right">Right</option>
+                  <option value="front">Front</option>
+                  <option value="back">Back</option>
+                </select>
+              </div>
+              <div>
+                <label className="mb-2 block">Connections</label>
+                <div
+                  className={cx(`grid gap-2`, {
+                    'grid-cols-2': selectedTile.connections.length === 2,
+                    'grid-cols-3': selectedTile.connections.length === 3,
+                  })}
+                >
+                  {selectedTile.connections.map((connection, i) => {
+                    return (
+                      <div key={i}>
+                        <label className="mb-1 block text-xs ">
+                          Connection {i}
+                        </label>
+                        <input
+                          className={cx(styles.input, 'mb-2 w-full')}
+                          value={connection!}
+                          onChange={(e) => {
+                            updateTile(selectedTileId, {
+                              connections: selectedTile.connections.map(
+                                (c, j) => (i === j ? e.target.value : c),
+                              ) as StrTrip,
+                            });
+                          }}
+                          type="text"
+                        />
+                        <label className="mb-1 block text-xs">
+                          Other Entrance
+                        </label>
+                        <select
+                          className={cx(styles.input, 'mb-2 w-full')}
+                          value={selectedTile.entrances[i]!}
+                          onChange={(e) => {
+                            updateTile(selectedTileId, {
+                              entrances: selectedTile.entrances.map((c, j) =>
+                                i === j ? parseInt(e.target.value) : c,
+                              ) as NumTrip,
+                            });
+                          }}
+                        >
+                          {level
+                            .find(
+                              (tile): tile is RailTile =>
+                                tile.id === connection,
+                            )
+                            ?.entrances.map((_, i) => {
+                              return (
+                                <option key={i} value={i}>
+                                  {i}
+                                </option>
+                              );
+                            })}
+                        </select>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       )}
     </div>

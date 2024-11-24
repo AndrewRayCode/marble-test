@@ -1,4 +1,4 @@
-import { ChoiceTile, RailTile, useGameStore } from '@/store/gameStore';
+import { JunctionTile, RailTile, useGameStore } from '@/store/gameStore';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CatmullRomCurve3,
@@ -12,7 +12,7 @@ import {
   INITIAL_SPHERE_RADIUS,
   RAIL_RADIUS,
   TILE_HALF_WIDTH,
-} from './constants';
+} from '../../game/constants';
 import { pointAroundCircle } from '@/util/math';
 import { useFrame } from '@react-three/fiber';
 import { Html } from '@react-three/drei';
@@ -82,7 +82,7 @@ export const curveForRailTile = (tile: RailTile) =>
     ),
   );
 
-export const curveForChoiceTile = (tile: ChoiceTile, entrance: number) =>
+export const curveForChoiceTile = (tile: JunctionTile, entrance: number) =>
   translateCurve(
     rotateBezierCurve(
       tile.type === 't' ? tStraights[entrance] : tStraights[entrance],
@@ -369,7 +369,7 @@ export const QuarterTurn = ({ tile }: { tile: RailTile }) => {
   );
 };
 
-export const Junction = ({ tile }: { tile: ChoiceTile }) => {
+export const Junction = ({ tile }: { tile: JunctionTile }) => {
   const { position, rotation, showSides } = tile;
   const str8 = useCurve(straightCurve);
   const small = useCurve(innerQuarterCurve);
