@@ -1,11 +1,22 @@
+import { deg2Rad } from '@/util/math';
 import { useKeyboardControls } from '@react-three/drei';
 import { useEffect } from 'react';
 import { CubicBezierCurve3, Group, Vector3 } from 'three';
 import { create } from 'zustand';
 
-type PartialOfUnion<T> = T extends infer U ? Partial<U> : never;
-
 export type Side = 'left' | 'right' | 'front' | 'back';
+
+export type Trannsform = {
+  position?: [number, number, number];
+  rotation?: [number, number, number];
+};
+
+export type Action = {
+  type: 'rotation';
+  degrees: number;
+  targetTiles: string[];
+  axis: 'x' | 'y' | 'z';
+};
 
 export type TileBase = {
   id: string;
@@ -18,7 +29,8 @@ export type TarkTile = TileBase & {
   position: [number, number, number];
   rotation: [number, number, number];
   type: 'tark';
-  actionType: 'toggle' | 'timed' | 'hold';
+  actionType: 'toggle' | 'click' | 'timed' | 'hold';
+  action?: Action;
 };
 
 type NullStr = string | null;
@@ -77,13 +89,25 @@ export const level: Level = [
     position: [0, 1, 0],
     rotation: [Math.PI / 2, 0, 0],
     actionType: 'hold',
+    // action: {
+    //   type: 'rotation',
+    //   degrees: 90,
+    //   targetTiles: ['16'],
+    //   axis: 'z',
+    // },
   },
   {
     id: 'b',
     type: 'tark',
     position: [0, 2, 0],
     rotation: [Math.PI / 2, 0, 0],
-    actionType: 'toggle',
+    actionType: 'click',
+    action: {
+      type: 'rotation',
+      degrees: 90,
+      targetTiles: ['6'],
+      axis: 'y',
+    },
   },
   // T junction
   {
@@ -267,6 +291,11 @@ export interface GameStore {
     switchId: string | number,
     enabled: boolean,
   ) => void;
+  applyAction: (action: Action) => void;
+
+  transforms: Record<string, Trannsform>;
+  setTransform: (id: string, transform: Trannsform) => void;
+  clearTransform: (id: string, key?: keyof Trannsform) => void;
 
   // Game UI state
   arrowPositions: Vector3[];
@@ -277,7 +306,7 @@ export interface GameStore {
   resetLevel: (leveL: Level) => void;
 }
 
-export const useGameStore = create<GameStore>((set) => ({
+export const useGameStore = create<GameStore>((set, get) => ({
   debug: false,
   toggleDebug: () => set((state) => ({ debug: !state.debug })),
 
@@ -354,6 +383,52 @@ export const useGameStore = create<GameStore>((set) => ({
         },
       };
       return { enabledBooleanSwitchesFor };
+    }),
+  applyAction: (action) => {
+    const s = get();
+    action.targetTiles.forEach((targetId) => {
+      const target = level.find((t) => t.id === targetId);
+      if (action!.type === 'rotation') {
+        const start = s.transforms[targetId]?.rotation ||
+          target?.rotation || [0, 0, 0];
+        const { axis, degrees } = action;
+        const rad = deg2Rad(degrees);
+        s.setTransform(targetId, {
+          ...s.transforms[targetId],
+          rotation: [
+            start[0] + (axis === 'x' ? rad : 0),
+            start[1] + (axis === 'y' ? rad : 0),
+            start[2] + (axis === 'z' ? rad : 0),
+          ],
+        });
+      }
+    });
+  },
+
+  transforms: {},
+  setTransform: (id, transform) =>
+    set((state) => ({
+      transforms: {
+        ...state.transforms,
+        [id]: transform,
+      },
+    })),
+  clearTransform: (id, key) =>
+    set((state) => {
+      if (key) {
+        const transform = state.transforms[id];
+        delete transform[key];
+        return {
+          transforms: {
+            ...state.transforms,
+            [id]: transform,
+          },
+        };
+      } else {
+        const transforms = { ...state.transforms };
+        delete transforms[id];
+        return { transforms };
+      }
     }),
 
   arrowPositions: [],

@@ -1,5 +1,5 @@
 import { JunctionTile, RailTile, useGameStore } from '@/store/gameStore';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CatmullRomCurve3,
   CubicBezierCurve3,
@@ -14,8 +14,7 @@ import {
   TILE_HALF_WIDTH,
 } from '../../game/constants';
 import { pointAroundCircle } from '@/util/math';
-import { useFrame } from '@react-three/fiber';
-import { Html } from '@react-three/drei';
+import { useSpring, a } from '@react-spring/three';
 
 export const translateCurve = (curve: CubicBezierCurve3, position: Vector3) =>
   new CubicBezierCurve3(
@@ -293,18 +292,28 @@ export const DebugCurveHandles = ({
 };
 
 export const QuarterTurn = ({ tile }: { tile: RailTile }) => {
-  const { position, rotation, showSides } = tile;
+  const { position: meshPosition, rotation: meshRotation, showSides } = tile;
   const c1 = useCurve(quarterCurve);
   const c2 = useCurve(innerQuarterCurve);
   const debug = useGameStore((state) => state.debug);
+  const transform = useGameStore((state) => state.transforms[tile.id]);
 
-  // With a camera at the positive 6 position:
-  // -x is left, +x is right
-  // -y is down, +y is up
-  // -z is towards the camera, +z is away from the camera
+  // Configure spring animation for rotation
+  const { position, rotation } = useSpring({
+    position: transform?.position || meshPosition,
+    rotation: transform?.rotation || meshRotation,
+    config: {
+      mass: 1,
+      tension: 170,
+      friction: 26,
+    },
+  });
 
   return (
-    <group position={position} rotation={rotation}>
+    <a.group
+      position={position}
+      rotation={rotation as unknown as [number, number, number]}
+    >
       {debug && (
         <DebugCurveHandles
           curve={quarterCurve}
@@ -365,7 +374,7 @@ export const QuarterTurn = ({ tile }: { tile: RailTile }) => {
           />
         </mesh>
       ) : null}
-    </group>
+    </a.group>
   );
 };
 

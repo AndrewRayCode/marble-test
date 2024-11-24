@@ -44,3 +44,5 @@ export const distance3D = (
   const dz = z2 - z1;
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 };
+
+export const deg2Rad = (degrees: number) => degrees * (Math.PI / 180);

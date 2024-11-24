@@ -33,7 +33,7 @@ import {
   useGameStore,
   useKeyPress,
 } from '@/store/gameStore';
-import { toScreen, toWorld } from '@/util/math';
+import { deg2Rad, toScreen, toWorld } from '@/util/math';
 import OnScreenArrows from './OnScreenArrows';
 import EditorComponent, { EditorUI } from './Editor/Editor';
 
@@ -208,14 +208,37 @@ const Game = () => {
           const isNear = point.distanceTo(new Vector3(...tark.position)) < 0.2;
           const on = s.booleanSwitches[tark.id];
           const enabled = s.enabledBooleanSwitchesFor[-1]?.[tark.id] !== false;
-          // Rolling over toggles
-          if (tark.actionType === 'toggle') {
+          const { action } = tark;
+
+          // Rolling over action triggers each time
+          if (tark.actionType === 'click') {
             if (enabled && isNear) {
               playBtnSfx();
               s.setEnabledBooleanSwitchesFor(-1, tark.id, false);
               s.setBooleanSwitch(tark.id, !on);
+
+              if (action) {
+                s.applyAction(action);
+              }
+            } else if (!enabled && !isNear) {
+              s.setEnabledBooleanSwitchesFor(-1, tark.id, true);
             }
-            if (!enabled && !isNear) {
+          } else if (tark.actionType === 'toggle') {
+            if (enabled && isNear) {
+              playBtnSfx();
+              s.setEnabledBooleanSwitchesFor(-1, tark.id, false);
+              s.setBooleanSwitch(tark.id, !on);
+
+              if (action) {
+                if (isNear) {
+                  s.applyAction(action);
+                } else {
+                  action.targetTiles.forEach((tileId) => {
+                    s.clearTransform(tileId, action.type);
+                  });
+                }
+              }
+            } else if (!enabled && !isNear) {
               s.setEnabledBooleanSwitchesFor(-1, tark.id, true);
             }
             // Need to stay over
@@ -224,11 +247,20 @@ const Game = () => {
               playBtnSfx();
               s.setEnabledBooleanSwitchesFor(-1, tark.id, false);
               s.setBooleanSwitch(tark.id, !on);
+              if (action) {
+                s.applyAction(action);
+              }
             }
             if (!enabled && !isNear) {
               playBtnSfx();
               s.setEnabledBooleanSwitchesFor(-1, tark.id, true);
               s.setBooleanSwitch(tark.id, !on);
+
+              if (action) {
+                action.targetTiles.forEach((tileId) => {
+                  s.clearTransform(tileId, action.type);
+                });
+              }
             }
           }
         });
