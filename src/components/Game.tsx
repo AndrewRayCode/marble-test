@@ -112,9 +112,6 @@ const Game = () => {
   useKeyPress('reset', () => {
     console.log('Resetting game!');
     resetLevel(level);
-    // if (isRailTile(level[0])) {
-    //   setCurrentCurve(curveForRailTile(level[0]));
-    // }
   });
 
   const [playBtnSfx] = useSound(buttonSfx, { volume: 0.5 });
@@ -125,9 +122,6 @@ const Game = () => {
       setGameStarted(true);
       console.log('Starting game');
       resetLevel(level);
-      // if (isRailTile(level[0])) {
-      //   setCurrentCurve(curveForRailTile(level[0]));
-      // }
     }
   }, [level, gameStarted, setGameStarted, resetLevel]);
 
@@ -181,7 +175,6 @@ const Game = () => {
       {} as Record<string, ScreenArrow>,
     );
 
-    let nextTile: TrackTile | undefined;
     const isPositive = s.playerMomentum >= 0;
 
     // Type safe bail-out for later, like falling out of level
@@ -213,6 +206,7 @@ const Game = () => {
       // Update the sphere's position
       marbleRef.current.position.copy(point);
 
+      // Check for switch presses
       level
         .filter((t): t is TarkTile => t.type === 'tark')
         .forEach((tark) => {
@@ -276,6 +270,7 @@ const Game = () => {
           }
         });
 
+      let nextTile: TrackTile | undefined;
       let nextIdx: number | null | undefined;
       let nextId: string | null | undefined;
       let nextEntrance: number | null | undefined;
@@ -476,7 +471,13 @@ const Game = () => {
                   {tile.id}
                 </Html>
                 <tubeGeometry
-                  args={[curveForRailTile(tile), 70, 0.01, 50, false]}
+                  args={[
+                    tilesComputed[tile.id]?.curves?.[0],
+                    70,
+                    0.01,
+                    50,
+                    false,
+                  ]}
                 />
                 <meshStandardMaterial color="blue" wireframe />
               </mesh>
@@ -489,19 +490,37 @@ const Game = () => {
                 </Html>
                 <mesh>
                   <tubeGeometry
-                    args={[curveForChoiceTile(tile, 0), 70, 0.01, 50, false]}
+                    args={[
+                      tilesComputed[tile.id]?.curves?.[0],
+                      70,
+                      0.01,
+                      50,
+                      false,
+                    ]}
                   />
                   <meshStandardMaterial color="blue" wireframe />
                 </mesh>
                 <mesh>
                   <tubeGeometry
-                    args={[curveForChoiceTile(tile, 1), 70, 0.01, 50, false]}
+                    args={[
+                      tilesComputed[tile.id]?.curves?.[1],
+                      70,
+                      0.01,
+                      50,
+                      false,
+                    ]}
                   />
                   <meshStandardMaterial color="blue" wireframe />
                 </mesh>
                 <mesh>
                   <tubeGeometry
-                    args={[curveForChoiceTile(tile, 2), 70, 0.01, 50, false]}
+                    args={[
+                      tilesComputed[tile.id]?.curves?.[2],
+                      70,
+                      0.01,
+                      50,
+                      false,
+                    ]}
                   />
                   <meshStandardMaterial color="blue" wireframe />
                 </mesh>

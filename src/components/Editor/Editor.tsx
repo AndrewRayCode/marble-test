@@ -50,7 +50,9 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
   const setSelectedTileId = useGameStore((state) => state.setSelectedTileId);
   const hoverTileId = useGameStore((state) => state.hoverTileId);
   const setHoverTileId = useGameStore((state) => state.setHoverTileId);
-  const updateTile = useGameStore((state) => state.updateTile);
+  const updateTileAndRecompute = useGameStore(
+    (state) => state.updateTileAndRecompute,
+  );
   const addTile = useGameStore((state) => state.addTile);
   const deleteTile = useGameStore((state) => state.deleteTile);
   const showCursor = useGameStore((state) => state.showCursor);
@@ -228,7 +230,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
           onChange={(e) => {
             const target = tileRefs.get(selectedTileId)!;
             if (target) {
-              updateTile(
+              updateTileAndRecompute(
                 selectedTileId,
                 transformMode === 'translate'
                   ? {
@@ -321,7 +323,9 @@ export const EditorUI = ({
   const selectedTileId = useGameStore((state) => state.selectedTileId);
   const level = useGameStore((state) => state.level);
   const selectedTile = level.find((tile) => tile.id === selectedTileId);
-  const updateTile = useGameStore((state) => state.updateTile);
+  const updateTileAndRecompute = useGameStore(
+    (state) => state.updateTileAndRecompute,
+  );
   const createType = useGameStore((state) => state.createType);
   const setCreateType = useGameStore((state) => state.setCreateType);
   const showCursor = useGameStore((state) => state.showCursor);
@@ -441,7 +445,7 @@ export const EditorUI = ({
                   className={cx(styles.input, 'mb-2 w-full')}
                   value={selectedTile.showSides}
                   onChange={(e) => {
-                    updateTile(selectedTileId, {
+                    updateTileAndRecompute(selectedTileId, {
                       showSides: e.target.value as Side,
                     });
                   }}
@@ -473,7 +477,7 @@ export const EditorUI = ({
                           className={cx(styles.input, 'mb-2 w-full')}
                           value={connection!}
                           onChange={(e) => {
-                            updateTile(selectedTileId, {
+                            updateTileAndRecompute(selectedTileId, {
                               connections: selectedTile.connections.map(
                                 (c, j) => (i === j ? e.target.value : c),
                               ) as StrTrip,
@@ -488,7 +492,7 @@ export const EditorUI = ({
                           className={cx(styles.input, 'mb-2 w-full')}
                           value={selectedTile.entrances[i]!}
                           onChange={(e) => {
-                            updateTile(selectedTileId, {
+                            updateTileAndRecompute(selectedTileId, {
                               entrances: selectedTile.entrances.map((c, j) =>
                                 i === j ? parseInt(e.target.value) : c,
                               ) as NumTrip,

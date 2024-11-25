@@ -89,19 +89,19 @@ export const level: Level = [
     connections: ['0', '5'],
     entrances: [1, 1],
   },
-  {
-    id: 'a',
-    type: 'tark',
-    position: [0, 1, 0],
-    rotation: [Math.PI / 2, 0, 0],
-    actionType: 'hold',
-    // action: {
-    //   type: 'rotation',
-    //   degrees: 90,
-    //   targetTiles: ['16'],
-    //   axis: 'z',
-    // },
-  },
+  // {
+  //   id: 'a',
+  //   type: 'tark',
+  //   position: [0, 1, 0],
+  //   rotation: [Math.PI / 2, 0, 0],
+  //   actionType: 'hold',
+  //   // action: {
+  //   //   type: 'rotation',
+  //   //   degrees: 90,
+  //   //   targetTiles: ['16'],
+  //   //   axis: 'z',
+  //   // },
+  // },
   {
     id: 'b',
     type: 'tark',
@@ -262,7 +262,11 @@ export interface GameStore {
   setIsEditing: (isEditing: boolean) => void;
   addTile: (tile: Tile) => void;
   deleteTile: (tileId: string) => void;
-  updateTile: <T extends Tile>(tileId: string, tile: Partial<T>) => void;
+  updateTileAndRecompute: <T extends Tile>(
+    tileId: string,
+    tile: Partial<T>,
+  ) => void;
+  updateTile: (tile: Tile) => void;
   showCursor: boolean;
   setShowCursor: (showCursor: boolean) => void;
   createType: Tile['type'];
@@ -291,7 +295,7 @@ export interface GameStore {
   setNextConnection: (entrance: number | null) => void;
   exitPositions: Record<string | number, Vector3[]>;
   setExitPositions: (tileId: string | number, exitPositions: Vector3[]) => void;
-  autoSnap: () => void;
+  autoSnap: (updatedComputed?: Record<string, TileComputed>) => void;
 
   booleanSwitches: Record<string, boolean>;
   setBooleanSwitch: (key: string, value: boolean) => void;
@@ -347,7 +351,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
       delete tilesComputed[tileId];
       return { level };
     }),
-  updateTile: <T extends Tile>(tileId: string, update: Partial<T>) =>
+  updateTileAndRecompute: <T extends Tile>(
+    tileId: string,
+    update: Partial<T>,
+  ) =>
     set((state) => {
       const t = state.level.find((tile) => tile.id === tileId) as T;
       if (!t) {
@@ -360,6 +367,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
       if (isRailTile(updated) || isJunctionTile(updated)) {
         state.setTileComputed(updated.id, computeTrackTile(updated));
       }
+      return { level };
+    }),
+  updateTile: (tile) =>
+    set((state) => {
+      const level = state.level.map((t) => (t.id === tile.id ? tile : t));
       return { level };
     }),
   showCursor: false,
@@ -409,34 +421,38 @@ export const useGameStore = create<GameStore>((set, get) => ({
         [tileId]: exitPositions,
       },
     })),
-  autoSnap: () => {
+  autoSnap: (updatedComputed) => {
     const s = get();
+    const tilesById = s.level.reduce<Record<string, Tile>>((acc, tile) => {
+      acc[tile.id] = tile;
+      return acc;
+    }, {});
 
-    const tileExits = Object.entries(s.tilesComputed).reduce<TileExit[]>(
-      (arr, [tileId, computed]) => {
-        const tile = s.level.find((t) => t.id === tileId);
-        if (tile && (isRailTile(tile) || isJunctionTile(tile))) {
-          return arr.concat(
-            computed.exits.map((exit, i) => ({
-              tileId,
-              position: exit.toArray() as [number, number, number],
-              entranceIndex: i,
-            })),
-          );
-        }
-        return arr;
-      },
-      [],
-    );
+    const tileExits = Object.entries(updatedComputed || s.tilesComputed).reduce<
+      TileExit[]
+    >((arr, [tileId, computed]) => {
+      const tile = tilesById[tileId];
+      if (tile && (isRailTile(tile) || isJunctionTile(tile))) {
+        return arr.concat(
+          computed.exits.map((exit, i) => ({
+            tileId,
+            position: exit.toArray() as [number, number, number],
+            entranceIndex: i,
+          })),
+        );
+      }
+      return arr;
+    }, []);
     const [buddies, groups] = calculateExitBuddies(tileExits);
     // console.log(buddies);
     // if ('connections' in target) {
     Object.entries(buddies).forEach(([targetId, buds]) => {
       // const buds = buddies[targetId];
-      s.updateTile<RailTile>(targetId, {
+      s.updateTile({
+        ...tilesById[targetId],
         connections: buds.map((b) => (b ? b.tileId : null)) as StrDup,
         entrances: buds.map((b) => (b ? b.entranceIndex : null)) as NumDup,
-      });
+      } as RailTile);
     });
     // }
 
@@ -489,7 +505,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
         s.setTilesComputed(updatedComputed);
         s.setTransform(targetId, transform);
-        s.autoSnap();
+        s.autoSnap(updatedComputed);
       }
     });
   },
