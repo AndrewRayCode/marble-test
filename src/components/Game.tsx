@@ -68,8 +68,6 @@ const Game = () => {
   const toggleDebug = useGameStore((state) => state.toggleDebug);
   const resetLevel = useGameStore((state) => state.resetLevel);
   const setScreenArrows = useGameStore((state) => state.setScreenArrows);
-  // const setCurrentCurve = useGameStore((state) => state.setCurrentCurve);
-  // const currentCurve = useGameStore((state) => state.currentCurve);
   const setCurveProgress = useGameStore((state) => state.setCurveProgress);
   const setCurrentTile = useGameStore((state) => state.setCurrentTile);
   const currentCurveIndex = useGameStore((state) => state.currentCurveIndex);
@@ -82,7 +80,6 @@ const Game = () => {
   const setMomentum = useGameStore((state) => state.setMomentum);
   const setEnteredFrom = useGameStore((state) => state.setEnteredFrom);
   const setNextConnection = useGameStore((state) => state.setNextConnection);
-  // const currentExitRefs = useGameStore((state) => state.currentExitRefs);
   const gameStarted = useGameStore((state) => state.gameStarted);
   const setGameStarted = useGameStore((state) => state.setGameStarted);
   const isEditing = useGameStore((state) => state.isEditing);

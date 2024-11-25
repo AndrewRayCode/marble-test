@@ -428,6 +428,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return acc;
     }, {});
 
+    // First produce the world position of all exits of tiles
     const tileExits = Object.entries(updatedComputed || s.tilesComputed).reduce<
       TileExit[]
     >((arr, [tileId, computed]) => {
@@ -443,18 +444,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
       }
       return arr;
     }, []);
+
+    // Then update the tile connections ("auto snap" them together)
     const [buddies, groups] = calculateExitBuddies(tileExits);
-    // console.log(buddies);
-    // if ('connections' in target) {
     Object.entries(buddies).forEach(([targetId, buds]) => {
-      // const buds = buddies[targetId];
       s.updateTile({
         ...tilesById[targetId],
         connections: buds.map((b) => (b ? b.tileId : null)) as StrDup,
         entrances: buds.map((b) => (b ? b.entranceIndex : null)) as NumDup,
       } as RailTile);
     });
-    // }
 
     s.setBuddies(groups);
   },
@@ -505,6 +504,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
         s.setTilesComputed(updatedComputed);
         s.setTransform(targetId, transform);
+        // If a transform applies rotation, re-snap the updated positions. Note
+        // right now this does not wait for any springs to come to rest, it
+        // changes them instantly based on the target transform
         s.autoSnap(updatedComputed);
       }
     });

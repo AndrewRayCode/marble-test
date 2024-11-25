@@ -24,7 +24,6 @@ const arrowLookup = {
  */
 const OnScreenArrows = () => {
   const currentTile = useGameStore((state) => state.currentTile);
-  // const currentExitRefs = useGameStore((state) => state.currentExitRefs);
   const tilesComputed = useGameStore((state) => state.tilesComputed);
   const [arrowRefs, setArrowRef] = useRefMap<Group>();
   const [htmlRefs, setHtmlRefs] = useRefMap<HTMLDivElement>();
