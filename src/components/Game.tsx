@@ -66,14 +66,18 @@ const screenDown = new Vector2(0, 1);
 const Game = () => {
   const [, key] = useKeyboardControls();
 
+  const buddies = useGameStore((state) => state.buddies);
   const toggleDebug = useGameStore((state) => state.toggleDebug);
   const resetLevel = useGameStore((state) => state.resetLevel);
   const setScreenArrows = useGameStore((state) => state.setScreenArrows);
-  // TODO: current curve index in case of t junction
   // const setCurrentCurve = useGameStore((state) => state.setCurrentCurve);
   // const currentCurve = useGameStore((state) => state.currentCurve);
   const setCurveProgress = useGameStore((state) => state.setCurveProgress);
   const setCurrentTile = useGameStore((state) => state.setCurrentTile);
+  const currentCurveIndex = useGameStore((state) => state.currentCurveIndex);
+  const setCurrentCurveIndex = useGameStore(
+    (state) => state.setCurrentCurveIndex,
+  );
   const debug = useGameStore((state) => state.debug);
   const currentTile = useGameStore((state) => state.currentTile);
   const level = useGameStore((state) => state.level);
@@ -91,10 +95,11 @@ const Game = () => {
   const orbit = useRef<OrbitControlsImpl>(null);
   const { camera, viewport } = useThree();
 
-  const currentCurve = useMemo(
-    () => level.find((t) => t.id === currentTile?.id),
-    [currentTile, level],
-  );
+  const currentCurve = useMemo(() => {
+    if (currentTile) {
+      return tilesComputed[currentTile.id]?.curves?.[currentCurveIndex];
+    }
+  }, [currentTile, currentCurveIndex, tilesComputed]);
 
   const arrowPositions = useMemo(
     () =>
@@ -112,7 +117,7 @@ const Game = () => {
     // }
   });
 
-  const [playBtnSfx] = useSound(buttonSfx);
+  const [playBtnSfx] = useSound(buttonSfx, { volume: 0.5 });
 
   // Start game :(
   useEffect(() => {
@@ -312,13 +317,14 @@ const Game = () => {
               setNextConnection(nextConnection);
               // We are moving out from T so negative momentum
               setMomentum(-PLAYER_SPEED);
-              const nextRotation =
-                s.transforms[currentTile.id]?.rotation || currentTile.rotation;
-              setCurrentCurve(
-                // reverseBezierCurve(curveForChoiceTile(currentTile, 0)),
-                // Set the path to the leftmost T arm
-                curveForChoiceTile(currentTile, nextConnection, nextRotation),
-              );
+              // const nextRotation =
+              //   s.transforms[currentTile.id]?.rotation || currentTile.rotation;
+              setCurrentCurveIndex(nextConnection);
+              // setCurrentCurve(
+              // reverseBezierCurve(curveForChoiceTile(currentTile, 0)),
+              // Set the path to the leftmost T arm
+              //   curveForChoiceTile(currentTile, nextConnection, nextRotation),
+              // );
               // Start at the far end of the curve!
               setCurveProgress(1.0);
               // We are at the t junction, we came from the bottom, and no keys
@@ -359,12 +365,13 @@ const Game = () => {
 
           setCurrentTile(nextTile);
 
-          const nextRotation =
-            s.transforms[nextTile.id]?.rotation || nextTile.rotation;
+          // const nextRotation =
+          //   s.transforms[nextTile.id]?.rotation || nextTile.rotation;
 
           // If connecting to a striaght tile
           if (isRailTile(nextTile)) {
-            setCurrentCurve(curveForRailTile(nextTile, nextRotation));
+            // setCurrentCurve(curveForRailTile(nextTile, nextRotation));
+            setCurrentCurveIndex(0);
             setEnteredFrom(nextEntrance);
             // Go towards other connection
             setNextConnection(nextEntrance === 0 ? 1 : 0);
@@ -373,9 +380,10 @@ const Game = () => {
             setCurveProgress(nextEntrance === 0 ? 0 : 1);
             // If connecting to a T junction
           } else if (nextTile.type === 't') {
-            setCurrentCurve(
-              curveForChoiceTile(nextTile, nextEntrance, nextRotation),
-            );
+            // setCurrentCurve(
+            //   curveForChoiceTile(nextTile, nextEntrance, nextRotation),
+            // );
+            setCurrentCurveIndex(nextEntrance);
             setEnteredFrom(nextEntrance);
             // We are entering a choice tile - the next connection is t center
             setNextConnection(-1);
@@ -409,6 +417,34 @@ const Game = () => {
           emissive={0x333333}
         />
       </mesh>
+
+      {debug &&
+        buddies.map(([b1, b2], i) => (
+          <group key={i}>
+            <mesh
+              position={[
+                b1.position[0] + Math.random() * 0.1,
+                b1.position[1],
+                b1.position[2] + Math.random() * 0.1,
+              ]}
+            >
+              <sphereGeometry args={[0.1, 16, 16]} />
+              <meshStandardMaterial color="red" transparent opacity={0.5} />
+            </mesh>
+            {b2 && (
+              <mesh
+                position={[
+                  b2.position[0] - Math.random() * 0.1,
+                  b2.position[1],
+                  b2.position[2] - Math.random() * 0.1,
+                ]}
+              >
+                <sphereGeometry args={[0.1, 16, 16]} />
+                <meshStandardMaterial color="blue" transparent opacity={0.5} />
+              </mesh>
+            )}
+          </group>
+        ))}
 
       {/* On-screen arrows */}
       <OnScreenArrows />

@@ -2,6 +2,7 @@ import {
   JunctionTile,
   RailTile,
   TileComputed,
+  Transform,
   isJunctionTile,
   isRailTile,
 } from '@/store/gameStore';
@@ -74,8 +75,9 @@ export const useCurve = (curve: CubicBezierCurve3) => {
   }, [curve]);
 };
 
-export const curveForRailTile = (tile: RailTile, rotation = tile.rotation) =>
-  translateCurve(
+export const curveForRailTile = (tile: RailTile, transform?: Transform) => {
+  const rotation = transform?.rotation || tile.rotation;
+  return translateCurve(
     rotateBezierCurve(
       tile.type === 'straight' ? straightCurve : centerQuarterCurve,
       new Euler(rotation[0], rotation[1], rotation[2]),
@@ -87,13 +89,15 @@ export const curveForRailTile = (tile: RailTile, rotation = tile.rotation) =>
       tile.position[2],
     ),
   );
+};
 
 export const curveForChoiceTile = (
   tile: JunctionTile,
   entrance: number,
-  rotation = tile.rotation,
-) =>
-  translateCurve(
+  transform?: Transform,
+) => {
+  const rotation = transform?.rotation || tile.rotation;
+  return translateCurve(
     rotateBezierCurve(
       tile.type === 't' ? tStraights[entrance] : tStraights[entrance],
       new Euler(rotation[0], rotation[1], rotation[2]),
@@ -105,6 +109,7 @@ export const curveForChoiceTile = (
       tile.position[2],
     ),
   );
+};
 
 export const pointAt45 = pointAroundCircle(45, INITIAL_SPHERE_RADIUS);
 
@@ -203,15 +208,18 @@ export const tStraights = [
   ),
 ];
 
-export const computeTile = (tile: RailTile | JunctionTile): TileComputed => {
+export const computeTrackTile = (
+  tile: RailTile | JunctionTile,
+  transform?: Transform,
+): TileComputed => {
   if (isRailTile(tile)) {
-    const curve = curveForRailTile(tile);
+    const curve = curveForRailTile(tile, transform);
     return {
       curves: [curve],
       exits: [curve.getPointAt(0), curve.getPointAt(1)],
     };
   } else if (isJunctionTile(tile)) {
-    const curves = [0, 1, 2].map((i) => curveForChoiceTile(tile, i));
+    const curves = [0, 1, 2].map((i) => curveForChoiceTile(tile, i, transform));
     return {
       curves,
       exits: curves.map((c) => c.getPointAt(0)),

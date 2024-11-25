@@ -1,3 +1,4 @@
+import { Tile } from '@/store/gameStore';
 import { Viewport } from '@react-three/fiber';
 import { Camera, Object3D, Vector2, Vector3 } from 'three';
 
@@ -46,3 +47,49 @@ export const distance3D = (
 };
 
 export const deg2Rad = (degrees: number) => degrees * (Math.PI / 180);
+
+interface SpatialHash {
+  [key: string]: string[];
+}
+
+const CELL_SIZE = 0.25;
+const PROXIMITY_THRESHOLD = 0.1; // Distance threshold for nearby spheres
+
+// Helper function to get cell coordinates for a position
+const getCellCoords = ([x, y, z]: [number, number, number]): string => {
+  const xs = Math.round(x / CELL_SIZE) * CELL_SIZE;
+  const ys = Math.round(y / CELL_SIZE) * CELL_SIZE;
+  const zs = Math.round(z / CELL_SIZE) * CELL_SIZE;
+  return `${xs},${ys},${zs}`;
+};
+
+export type TileExit = {
+  tileId: string;
+  position: [number, number, number];
+  entranceIndex: number;
+};
+export const calculateExitBuddies = (tileExits: TileExit[]) => {
+  const tes = tileExits.reduce<Record<string, TileExit[]>>((acc, te) => {
+    const coords = getCellCoords(te.position);
+    return {
+      ...acc,
+      [coords]: (acc[coords] || []).concat(te),
+    };
+  }, {});
+  const groups = Object.values(tes);
+
+  const buddies = groups.reduce<
+    Record<string, { tileId: string; entranceIndex: number }[]>
+  >((acc, [a, b]) => {
+    if (b) {
+      acc[a.tileId] = acc[a.tileId] || [];
+      acc[a.tileId][a.entranceIndex] = b;
+
+      acc[b.tileId] = acc[b.tileId] || [];
+      acc[b.tileId][b.entranceIndex] = a;
+    }
+    return acc;
+  }, {});
+
+  return [buddies, groups] as const;
+};

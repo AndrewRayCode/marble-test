@@ -1,5 +1,5 @@
-import { computeTile } from '@/util/curves';
-import { deg2Rad } from '@/util/math';
+import { computeTrackTile } from '@/util/curves';
+import { calculateExitBuddies, deg2Rad, TileExit } from '@/util/math';
 import { useKeyboardControls } from '@react-three/drei';
 import { useEffect } from 'react';
 import { CubicBezierCurve3, Vector3 } from 'three';
@@ -250,6 +250,9 @@ export interface GameStore {
   debug: boolean;
   toggleDebug: () => void;
 
+  buddies: TileExit[][];
+  setBuddies: (buddies: TileExit[][]) => void;
+
   // Editor state
   hoverTileId: string | null;
   setHoverTileId: (id: string | null) => void;
@@ -259,7 +262,7 @@ export interface GameStore {
   setIsEditing: (isEditing: boolean) => void;
   addTile: (tile: Tile) => void;
   deleteTile: (tileId: string) => void;
-  updateTile: (tileId: string, tile: Partial<Tile>) => void;
+  updateTile: <T extends Tile>(tileId: string, tile: Partial<T>) => void;
   showCursor: boolean;
   setShowCursor: (showCursor: boolean) => void;
   createType: Tile['type'];
@@ -274,6 +277,8 @@ export interface GameStore {
   setCurveProgress: (progress: number) => void;
   currentTile: TrackTile | null;
   setCurrentTile: (tile: TrackTile) => void;
+  currentCurveIndex: number;
+  setCurrentCurveIndex: (index: number) => void;
   tilesComputed: Record<string, TileComputed>;
   setTileComputed: (tileId: string, computed: TileComputed) => void;
   setTilesComputed: (tiles: Record<string, TileComputed>) => void;
@@ -286,6 +291,7 @@ export interface GameStore {
   setNextConnection: (entrance: number | null) => void;
   exitPositions: Record<string | number, Vector3[]>;
   setExitPositions: (tileId: string | number, exitPositions: Vector3[]) => void;
+  autoSnap: () => void;
 
   booleanSwitches: Record<string, boolean>;
   setBooleanSwitch: (key: string, value: boolean) => void;
@@ -317,6 +323,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   debug: false,
   toggleDebug: () => set((state) => ({ debug: !state.debug })),
 
+  buddies: [],
+  setBuddies: (buddies) => set({ buddies }),
+
   isEditing: true,
   setIsEditing: (isEditing) => set({ isEditing }),
   selectedTileId: null,
@@ -326,18 +335,31 @@ export const useGameStore = create<GameStore>((set, get) => ({
   addTile: (tile) =>
     set((state) => {
       const level = [...state.level, tile];
+      if (isRailTile(tile) || isJunctionTile(tile)) {
+        state.setTileComputed(tile.id, computeTrackTile(tile));
+      }
       return { level };
     }),
   deleteTile: (tileId: string) =>
     set((state) => {
       const level = state.level.filter((tile) => tile.id !== tileId);
+      const tilesComputed = { ...state.tilesComputed };
+      delete tilesComputed[tileId];
       return { level };
     }),
   updateTile: <T extends Tile>(tileId: string, update: Partial<T>) =>
     set((state) => {
+      const t = state.level.find((tile) => tile.id === tileId) as T;
+      if (!t) {
+        return {};
+      }
+      const updated = { ...t, ...update } as T;
       const level = state.level.map((tile) =>
-        tileId === tile.id ? ({ ...tile, ...update } as T) : tile,
+        tileId === tile.id ? updated : tile,
       );
+      if (isRailTile(updated) || isJunctionTile(updated)) {
+        state.setTileComputed(updated.id, computeTrackTile(updated));
+      }
       return { level };
     }),
   showCursor: false,
@@ -353,6 +375,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setCurveProgress: (progress) => set({ curveProgress: progress }),
   currentTile: level[0] as TrackTile,
   setCurrentTile: (tile) => set({ currentTile: tile }),
+
+  currentCurveIndex: 0,
+  setCurrentCurveIndex: (currentCurveIndex) => set({ currentCurveIndex }),
+
   tilesComputed: {},
   setTileComputed: (tileId, computed) =>
     set((state) => ({
@@ -383,6 +409,39 @@ export const useGameStore = create<GameStore>((set, get) => ({
         [tileId]: exitPositions,
       },
     })),
+  autoSnap: () => {
+    const s = get();
+
+    const tileExits = Object.entries(s.tilesComputed).reduce<TileExit[]>(
+      (arr, [tileId, computed]) => {
+        const tile = s.level.find((t) => t.id === tileId);
+        if (tile && (isRailTile(tile) || isJunctionTile(tile))) {
+          return arr.concat(
+            computed.exits.map((exit, i) => ({
+              tileId,
+              position: exit.toArray() as [number, number, number],
+              entranceIndex: i,
+            })),
+          );
+        }
+        return arr;
+      },
+      [],
+    );
+    const [buddies, groups] = calculateExitBuddies(tileExits);
+    // console.log(buddies);
+    // if ('connections' in target) {
+    Object.entries(buddies).forEach(([targetId, buds]) => {
+      // const buds = buddies[targetId];
+      s.updateTile<RailTile>(targetId, {
+        connections: buds.map((b) => (b ? b.tileId : null)) as StrDup,
+        entrances: buds.map((b) => (b ? b.entranceIndex : null)) as NumDup,
+      });
+    });
+    // }
+
+    s.setBuddies(groups);
+  },
 
   booleanSwitches: {},
   setBooleanSwitch: (key, value) =>
@@ -407,7 +466,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   applyAction: (action) => {
     const s = get();
     action.targetTiles.forEach((targetId) => {
-      const target = level.find((t) => t.id === targetId)!;
+      const target = s.level.find((t) => t.id === targetId)!;
       if (action!.type === 'rotation') {
         const start = s.transforms[targetId]?.rotation ||
           target?.rotation || [0, 0, 0];
@@ -418,13 +477,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
           start[1] + (axis === 'y' ? rad : 0),
           start[2] + (axis === 'z' ? rad : 0),
         ] as [number, number, number];
-        // TODO: the updated ball rotation path happens by reading from the
-        // transforms at tile calculation time. Once a rotation is complete,
-        // need to figure out what entrances it breaks, and completes!
-        s.setTransform(targetId, {
+        const transform = {
           ...s.transforms[targetId],
           rotation,
-        });
+        };
+
+        const updatedComputed = {
+          ...s.tilesComputed,
+          [targetId]: computeTrackTile(target as RailTile, transform),
+        };
+
+        s.setTilesComputed(updatedComputed);
+        s.setTransform(targetId, transform);
+        s.autoSnap();
       }
     });
   },
@@ -467,7 +532,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
           isRailTile(tile) || isJunctionTile(tile)
             ? {
                 ...acc,
-                [tile.id]: computeTile(tile),
+                [tile.id]: computeTrackTile(tile),
               }
             : acc,
         {},
@@ -480,7 +545,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         nextConnection: -1,
         playerMomentum: 0,
         tilesComputed,
-        currentTile: level[0] as TrackTile,
+        currentTile: level.find((l) => l.id === '1') as TrackTile,
       };
     }),
 }));

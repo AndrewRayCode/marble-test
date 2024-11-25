@@ -56,6 +56,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
   const showCursor = useGameStore((state) => state.showCursor);
   const setShowCursor = useGameStore((state) => state.setShowCursor);
   const createType = useGameStore((state) => state.createType);
+  const autoSnap = useGameStore((state) => state.autoSnap);
   const [tileRefs, setTileRefs] = useRefMap<Mesh>();
 
   const selectedTile = level.find((tile) => tile.id === selectedTileId);
@@ -203,6 +204,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
                 actionType: 'toggle',
               });
             }
+            autoSnap();
           }}
         >
           <boxGeometry args={[1, 1, 1]} />
@@ -247,6 +249,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
                       }
                     : {},
               );
+              autoSnap();
             }
           }}
         ></TransformControls>
