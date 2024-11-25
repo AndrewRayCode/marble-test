@@ -39,11 +39,9 @@ const Junction = ({ tile }: { tile: JunctionTile }) => {
 
   return (
     <group position={position} rotation={rotation}>
-      {/* <group scale={[1.2, 1.2, 1.2]}> */}
       {exits.map((exit, i) => (
         <group key={i} position={exit} ref={setExitRef(i)}></group>
       ))}
-      {/* </group> */}
       {debug && (
         <mesh>
           <boxGeometry args={[1, 1, 1]} />

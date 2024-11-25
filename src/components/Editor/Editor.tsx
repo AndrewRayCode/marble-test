@@ -10,7 +10,6 @@ import {
   RailTile,
   Side,
   StrTrip,
-  Tile,
   TileBase,
   useGameStore,
   useKeyPress,

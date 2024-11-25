@@ -16,18 +16,16 @@ import {
 import { useFrame } from '@react-three/fiber';
 
 import { PLAYER_SPEED, SPHERE_RADIUS } from '@/game/constants';
-import { curveForChoiceTile, curveForRailTile } from '@/util/curves';
 import {
   isRailTile,
   ScreenArrow,
   ScreenArrows,
   TarkTile,
-  Tile,
   TrackTile,
   useGameStore,
   useKeyPress,
 } from '@/store/gameStore';
-import { deg2Rad, toScreen, toWorld } from '@/util/math';
+import { toScreen } from '@/util/math';
 import OnScreenArrows from './OnScreenArrows';
 import EditorComponent, { EditorUI } from './Editor/Editor';
 
@@ -312,14 +310,7 @@ const Game = () => {
               setNextConnection(nextConnection);
               // We are moving out from T so negative momentum
               setMomentum(-PLAYER_SPEED);
-              // const nextRotation =
-              //   s.transforms[currentTile.id]?.rotation || currentTile.rotation;
               setCurrentCurveIndex(nextConnection);
-              // setCurrentCurve(
-              // reverseBezierCurve(curveForChoiceTile(currentTile, 0)),
-              // Set the path to the leftmost T arm
-              //   curveForChoiceTile(currentTile, nextConnection, nextRotation),
-              // );
               // Start at the far end of the curve!
               setCurveProgress(1.0);
               // We are at the t junction, we came from the bottom, and no keys
@@ -360,12 +351,8 @@ const Game = () => {
 
           setCurrentTile(nextTile);
 
-          // const nextRotation =
-          //   s.transforms[nextTile.id]?.rotation || nextTile.rotation;
-
           // If connecting to a striaght tile
           if (isRailTile(nextTile)) {
-            // setCurrentCurve(curveForRailTile(nextTile, nextRotation));
             setCurrentCurveIndex(0);
             setEnteredFrom(nextEntrance);
             // Go towards other connection
@@ -375,9 +362,6 @@ const Game = () => {
             setCurveProgress(nextEntrance === 0 ? 0 : 1);
             // If connecting to a T junction
           } else if (nextTile.type === 't') {
-            // setCurrentCurve(
-            //   curveForChoiceTile(nextTile, nextEntrance, nextRotation),
-            // );
             setCurrentCurveIndex(nextEntrance);
             setEnteredFrom(nextEntrance);
             // We are entering a choice tile - the next connection is t center

@@ -6,7 +6,6 @@ import cx from 'classnames';
 
 import { useGameStore } from '@/store/gameStore';
 import { useRefMap } from '@/util/react';
-import { toWorld } from '@/util/math';
 
 import styles from './styles.module.css';
 import { Group } from 'three';
@@ -32,11 +31,6 @@ const OnScreenArrows = () => {
 
   // For every exit position of this junction, there is a *potential* arrow
   // to show
-  // const arrowPositions = useMemo(
-  //   () => (currentTile?.type === 't' ? currentExitRefs.map(toWorld) : []),
-  //   [currentExitRefs, currentTile],
-  // );
-
   const arrowPositions = useMemo(
     () =>
       currentTile?.type === 't' ? tilesComputed[currentTile.id]?.exits : [],

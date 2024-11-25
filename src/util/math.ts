@@ -1,4 +1,3 @@
-import { Tile } from '@/store/gameStore';
 import { Viewport } from '@react-three/fiber';
 import { Camera, Object3D, Vector2, Vector3 } from 'three';
 
@@ -48,14 +47,8 @@ export const distance3D = (
 
 export const deg2Rad = (degrees: number) => degrees * (Math.PI / 180);
 
-interface SpatialHash {
-  [key: string]: string[];
-}
-
+// Snap a position into a cell
 const CELL_SIZE = 0.25;
-const PROXIMITY_THRESHOLD = 0.1; // Distance threshold for nearby spheres
-
-// Helper function to get cell coordinates for a position
 const getCellCoords = ([x, y, z]: [number, number, number]): string => {
   const xs = Math.round(x / CELL_SIZE) * CELL_SIZE;
   const ys = Math.round(y / CELL_SIZE) * CELL_SIZE;
@@ -68,7 +61,13 @@ export type TileExit = {
   position: [number, number, number];
   entranceIndex: number;
 };
+
+/**
+ * For all the exits in a level, figure out which two are "buddy" pairs, aka
+ * which two are in close proximity to each other.
+ */
 export const calculateExitBuddies = (tileExits: TileExit[]) => {
+  // First group by each cell
   const tes = tileExits.reduce<Record<string, TileExit[]>>((acc, te) => {
     const coords = getCellCoords(te.position);
     return {
@@ -78,6 +77,7 @@ export const calculateExitBuddies = (tileExits: TileExit[]) => {
   }, {});
   const groups = Object.values(tes);
 
+  // Then transform the buddies so they are indexed by tile id, for easy lookup
   const buddies = groups.reduce<
     Record<string, { tileId: string; entranceIndex: number }[]>
   >((acc, [a, b]) => {
