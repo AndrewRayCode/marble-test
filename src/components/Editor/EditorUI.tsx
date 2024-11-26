@@ -40,7 +40,10 @@ export const EditorUI = ({
     setCreateType('quarter');
   });
   useKeyPress('b', () => {
-    setCreateType('tark');
+    setCreateType('button');
+  });
+  useKeyPress('c', () => {
+    setCreateType('cap');
   });
 
   return (
@@ -143,14 +146,14 @@ export const EditorUI = ({
               styles.keyboard,
               'bg-gray-700',
               {
-                [styles.selected]: createType === 'tark',
+                [styles.selected]: createType === 'button',
               },
             )}
             key="btn"
             onClick={(e) => {
               e.stopPropagation();
               e.preventDefault();
-              setCreateType('tark');
+              setCreateType('button');
             }}
           >
             <div className="key">b</div> <div>Button</div>

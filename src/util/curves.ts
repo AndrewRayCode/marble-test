@@ -1,7 +1,7 @@
 import {
   JunctionTile,
-  RailTile,
   TileComputed,
+  TrackTile,
   Transform,
   isJunctionTile,
   isRailTile,
@@ -75,11 +75,15 @@ export const useCurve = (curve: CubicBezierCurve3) => {
   }, [curve]);
 };
 
-export const curveForRailTile = (tile: RailTile, transform?: Transform) => {
+export const curveForRailTile = (tile: TrackTile, transform?: Transform) => {
   const rotation = transform?.rotation || tile.rotation;
   return translateCurve(
     rotateBezierCurve(
-      tile.type === 'straight' ? straightCurve : centerQuarterCurve,
+      tile.type === 'straight'
+        ? straightCurve
+        : tile.type === 'cap'
+          ? smallStraight
+          : centerQuarterCurve,
       new Euler(rotation[0], rotation[1], rotation[2]),
       new Vector3(0, TILE_HALF_WIDTH, 0),
     ),
@@ -176,6 +180,21 @@ export const straightCurve = new CubicBezierCurve3(
   new Vector3(0, 1, 0),
 );
 
+const HALF_TURN_CORRECTION = 0.5 * INITIAL_SPHERE_RADIUS;
+export const halfTurn = new CubicBezierCurve3(
+  new Vector3(0, 0, 0),
+  new Vector3(-HALF_TURN_CORRECTION, 1, 0),
+  new Vector3(1 + HALF_TURN_CORRECTION, 1, 0),
+  new Vector3(1, 0, 0),
+);
+export const INTO_CAP = INITIAL_SPHERE_RADIUS / 2;
+export const smallStraight = new CubicBezierCurve3(
+  new Vector3(0, 0, 0),
+  new Vector3(0, 0, 0),
+  new Vector3(0, INTO_CAP, 0),
+  new Vector3(0, INTO_CAP, 0),
+);
+
 export const reverseBezierCurve = (curve: CubicBezierCurve3) =>
   new CubicBezierCurve3(
     curve.v3.clone(),
@@ -210,10 +229,16 @@ export const tStraights = [
 
 // Generate the computed / runtime data for this tile
 export const computeTrackTile = (
-  tile: RailTile | JunctionTile,
+  tile: TrackTile,
   transform?: Transform,
 ): TileComputed => {
-  if (isRailTile(tile)) {
+  if (tile.type === 'cap') {
+    const curve = curveForRailTile(tile, transform);
+    return {
+      curves: [curve],
+      exits: [curve.getPointAt(0)],
+    };
+  } else if (isRailTile(tile)) {
     const curve = curveForRailTile(tile, transform);
     return {
       curves: [curve],

@@ -101,7 +101,7 @@ export const TileEditor = ({ selectedTileId }: { selectedTileId: string }) => {
       <div className="mb-3">
         <label className="text-slate-400">Type</label> {selectedTile.type}
       </div>
-      {selectedTile.type === 'tark' && (
+      {selectedTile.type === 'button' && (
         <div>
           <div className="mb-3">
             <label className="text-slate-400">Action Trigger</label>

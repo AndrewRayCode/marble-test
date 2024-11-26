@@ -20,8 +20,7 @@ import {
   isRailTile,
   ScreenArrow,
   ScreenArrows,
-  TarkTile,
-  Tile,
+  ButtonTile,
   TrackTile,
   useGameStore,
   useKeyPress,
@@ -38,8 +37,8 @@ import Straightaway from './Tiles/Straightaway';
 import QuarterTurn from './Tiles/QuarterTurn';
 import Junction from './Tiles/Junction';
 import { Level } from '@prisma/client';
-import { JsonObject } from '@prisma/client/runtime/library';
 import EditorUI from './Editor/EditorUI';
+import Cap from './Tiles/Cap';
 
 const lowest = (a: {
   left: number;
@@ -221,31 +220,33 @@ const Game = () => {
 
       // Check for switch presses
       level.tiles
-        .filter((t): t is TarkTile => t.type === 'tark')
-        .forEach((tark) => {
-          const isNear = point.distanceTo(new Vector3(...tark.position)) < 0.2;
-          const on = s.booleanSwitches[tark.id];
-          const enabled = s.enabledBooleanSwitchesFor[-1]?.[tark.id] !== false;
-          const { action } = tark;
+        .filter((t): t is ButtonTile => t.type === 'button')
+        .forEach((button) => {
+          const isNear =
+            point.distanceTo(new Vector3(...button.position)) < 0.2;
+          const on = s.booleanSwitches[button.id];
+          const enabled =
+            s.enabledBooleanSwitchesFor[-1]?.[button.id] !== false;
+          const { action } = button;
 
           // Rolling over action triggers each time
-          if (tark.actionType === 'click') {
+          if (button.actionType === 'click') {
             if (enabled && isNear) {
               playBtnSfx();
-              s.setEnabledBooleanSwitchesFor(-1, tark.id, false);
-              // s.setBooleanSwitch(tark.id, !on);
+              s.setEnabledBooleanSwitchesFor(-1, button.id, false);
+              // s.setBooleanSwitch(button.id, !on);
 
               if (action) {
                 s.applyAction(action);
               }
             } else if (!enabled && !isNear) {
-              s.setEnabledBooleanSwitchesFor(-1, tark.id, true);
+              s.setEnabledBooleanSwitchesFor(-1, button.id, true);
             }
-          } else if (tark.actionType === 'toggle') {
+          } else if (button.actionType === 'toggle') {
             if (enabled && isNear) {
               playBtnSfx();
-              s.setEnabledBooleanSwitchesFor(-1, tark.id, false);
-              s.setBooleanSwitch(tark.id, !on);
+              s.setEnabledBooleanSwitchesFor(-1, button.id, false);
+              s.setBooleanSwitch(button.id, !on);
 
               if (action) {
                 if (isNear) {
@@ -257,22 +258,22 @@ const Game = () => {
                 }
               }
             } else if (!enabled && !isNear) {
-              s.setEnabledBooleanSwitchesFor(-1, tark.id, true);
+              s.setEnabledBooleanSwitchesFor(-1, button.id, true);
             }
             // Need to stay over
-          } else if (tark.actionType === 'hold') {
+          } else if (button.actionType === 'hold') {
             if (enabled && isNear) {
               playBtnSfx();
-              s.setEnabledBooleanSwitchesFor(-1, tark.id, false);
-              s.setBooleanSwitch(tark.id, !on);
+              s.setEnabledBooleanSwitchesFor(-1, button.id, false);
+              s.setBooleanSwitch(button.id, !on);
               if (action) {
                 s.applyAction(action);
               }
             }
             if (!enabled && !isNear) {
               playBtnSfx();
-              s.setEnabledBooleanSwitchesFor(-1, tark.id, true);
-              s.setBooleanSwitch(tark.id, !on);
+              s.setEnabledBooleanSwitchesFor(-1, button.id, true);
+              s.setBooleanSwitch(button.id, !on);
 
               if (action) {
                 action.targetTiles.forEach((tileId) => {
@@ -451,8 +452,10 @@ const Game = () => {
             return <QuarterTurn key={tile.id} tile={tile} />;
           } else if (tile.type === 't') {
             return <Junction key={tile.id} tile={tile} />;
-          } else if (tile.type === 'tark') {
+          } else if (tile.type === 'button') {
             return <Toggle key={tile.id} tile={tile} />;
+          } else if (tile.type === 'cap') {
+            return <Cap key={tile.id} tile={tile} />;
           }
         })}
 
@@ -600,6 +603,7 @@ export default function ThreeScene({ dbLevels }: GameProps) {
           { name: 's', keys: ['s'] },
           { name: 'q', keys: ['q'] },
           { name: 'b', keys: ['b'] },
+          { name: 'c', keys: ['c'] },
           { name: 'r', keys: ['r'] },
           { name: 'x', keys: ['x'] },
           { name: 't', keys: ['t'] },

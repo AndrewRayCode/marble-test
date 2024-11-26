@@ -1,6 +1,6 @@
-import { TarkTile, useGameStore } from '@/store/gameStore';
+import { ButtonTile, useGameStore } from '@/store/gameStore';
 
-const Toggle = ({ tile, opacity }: { tile: TarkTile; opacity?: number }) => {
+const Toggle = ({ tile, opacity }: { tile: ButtonTile; opacity?: number }) => {
   const { position, rotation } = tile;
 
   const booleanSwitches = useGameStore((s) => s.booleanSwitches);

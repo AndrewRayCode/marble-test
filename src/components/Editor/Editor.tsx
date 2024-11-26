@@ -13,10 +13,11 @@ import {
   makeId,
   RailTile,
   Side,
-  TarkTile,
+  ButtonTile,
   TileBase,
   useGameStore,
   useKeyPress,
+  CapTile,
 } from '@/store/gameStore';
 
 import { useRefMap } from '@/util/react';
@@ -27,6 +28,7 @@ import Straightaway from '../Tiles/Straightaway';
 import QuarterTurn from '../Tiles/QuarterTurn';
 import Junction from '../Tiles/Junction';
 import Toggle from '../Tiles/Toggle';
+import Cap from '../Tiles/Cap';
 
 type EditorProps = {
   setOrbitEnabled: (enabled: boolean) => void;
@@ -77,12 +79,21 @@ const defaultJunctionTile: JunctionTile = {
   connections: [null, null, null],
   entrances: [null, null, null],
 };
-const defaultTarkTile: TarkTile = {
+const defaultButtonTile: ButtonTile = {
   id: `editor_cursor_${makeId()}`,
   position: [0, 0, 0],
   rotation: [0, 0, 0],
-  type: 'tark',
+  type: 'button',
   actionType: 'toggle',
+};
+const defaultCapTile: CapTile = {
+  id: `editor_cursor_${makeId()}`,
+  position: [0, 0, 0],
+  rotation: [0, 0, 0],
+  type: 'cap',
+  showSides: 'all' as Side,
+  connections: [null],
+  entrances: [null],
 };
 
 const TransformMemoized = memo(
@@ -118,7 +129,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
   const selectedTile = level?.tiles?.find((tile) => tile.id === selectedTileId);
 
   const targetTileIds =
-    selectedTile?.type === 'tark' ? selectedTile.action?.targetTiles : [];
+    selectedTile?.type === 'button' ? selectedTile.action?.targetTiles : [];
 
   const [gridPosition, setGridPosition] = useState([
     TILE_HALF_WIDTH,
@@ -293,11 +304,19 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
                   connections: [null, null, null],
                   entrances: [null, null, null],
                 });
-              } else if (createType === 'tark') {
+              } else if (createType === 'button') {
                 addTile({
                   ...base,
                   type: createType,
                   actionType: 'toggle',
+                });
+              } else if (createType === 'cap') {
+                addTile({
+                  ...base,
+                  type: createType,
+                  showSides: 'all' as Side,
+                  connections: [null],
+                  entrances: [null],
                 });
               }
               autoSnap();
@@ -312,8 +331,10 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
             <QuarterTurn tile={defaultQuarterTile} opacity={0.25} />
           ) : createType === 't' ? (
             <Junction tile={defaultJunctionTile} opacity={0.25} />
-          ) : createType === 'tark' ? (
-            <Toggle tile={defaultTarkTile} opacity={0.25} />
+          ) : createType === 'button' ? (
+            <Toggle tile={defaultButtonTile} opacity={0.25} />
+          ) : createType === 'cap' ? (
+            <Cap tile={defaultCapTile} opacity={0.25} />
           ) : null}
         </group>
       )}

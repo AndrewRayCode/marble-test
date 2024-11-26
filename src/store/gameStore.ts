@@ -44,10 +44,10 @@ export type TileBase = {
 };
 
 export type ActionType = 'toggle' | 'click' | 'timed' | 'hold';
-export type TarkTile = TileBase & {
+export type ButtonTile = TileBase & {
   position: [number, number, number];
   rotation: [number, number, number];
-  type: 'tark';
+  type: 'button';
   actionType: ActionType;
   action?: Action;
 };
@@ -70,8 +70,15 @@ export type RailTile = TileBase & {
   entrances: NumDup;
 };
 
+export type CapTile = TileBase & {
+  type: 'cap';
+  showSides: Side;
+  connections: [NullStr];
+  entrances: [NullNum];
+};
+
 export const isRailTile = (tile: Tile): tile is RailTile =>
-  tile.type === 'straight' || tile.type === 'quarter';
+  tile.type === 'straight' || tile.type === 'quarter' || tile.type === 'cap';
 
 let idx = 20;
 export const makeId = () =>
@@ -87,9 +94,9 @@ export const isJunctionTile = (tile: Tile): tile is JunctionTile =>
   tile.type === 't';
 
 // Only tiles the player can roll / travel on
-export type TrackTile = RailTile | JunctionTile;
+export type TrackTile = RailTile | JunctionTile | CapTile;
 // All valid level tiles
-export type Tile = RailTile | JunctionTile | TarkTile;
+export type Tile = TrackTile | ButtonTile;
 
 export type Level = Omit<DbLevel, 'id' | 'data'> & {
   id?: string;
@@ -97,172 +104,6 @@ export type Level = Omit<DbLevel, 'id' | 'data'> & {
   description: string;
   startingTileId: string;
   tiles: Tile[];
-};
-
-export const defaultTiles: Tile[] = [
-  {
-    id: '1',
-    type: 'straight',
-    position: [0, 0, 0],
-    rotation: [0, 0, 0],
-    showSides: 'all' as Side,
-    connections: ['0', '5'],
-    entrances: [1, 1],
-  },
-  // {
-  //   id: 'a',
-  //   type: 'tark',
-  //   position: [0, 1, 0],
-  //   rotation: [Math.PI / 2, 0, 0],
-  //   actionType: 'hold',
-  //   // action: {
-  //   //   type: 'rotation',
-  //   //   degrees: 90,
-  //   //   targetTiles: ['16'],
-  //   //   axis: 'z',
-  //   // },
-  // },
-  {
-    id: 'b',
-    type: 'tark',
-    position: [0, 2, 0],
-    rotation: [Math.PI / 2, 0, 0],
-    actionType: 'click',
-    action: {
-      type: 'rotation',
-      degrees: 90,
-      targetTiles: ['6'],
-      axis: 'y',
-    },
-  },
-  // T junction
-  {
-    id: '5',
-    type: 't',
-    position: [0, 1, 0],
-    rotation: [0, 0, 0],
-    showSides: 'all' as Side,
-    connections: ['6', '1', '7'],
-    entrances: [0, 1, 1],
-  },
-  // bottom left curve
-  {
-    id: '6',
-    type: 'quarter',
-    position: [-1, 1, 0],
-    rotation: [0, 0, Math.PI / 2],
-    showSides: 'all' as Side,
-    connections: ['5', '10'],
-    entrances: [0, 0],
-  },
-  // bottom right curve
-  {
-    id: '7',
-    type: 'quarter',
-    position: [1, 1, 0],
-    rotation: [0, 0, Math.PI],
-    showSides: 'all' as Side,
-    connections: ['8', '5'],
-    entrances: [1, 2],
-  },
-  // top right curve
-  {
-    id: '8',
-    type: 'quarter',
-    position: [1, 2, 0],
-    rotation: [0, 0, -Math.PI / 2],
-    showSides: 'all' as Side,
-    connections: ['9', '7'],
-    entrances: [0, 0],
-  },
-  // top straight
-  {
-    id: '9',
-    type: 'straight',
-    position: [0, 2, 0],
-    rotation: [0, 0, Math.PI / 2],
-    showSides: 'all' as Side,
-    connections: ['8', '10'],
-    entrances: [0, 1],
-  },
-  // top left curve
-  {
-    id: '10',
-    type: 'quarter',
-    position: [-1, 2, 0],
-    rotation: [0, 0, 0],
-    showSides: 'all' as Side,
-    connections: ['6', '9'],
-    entrances: [1, 1],
-  },
-
-  // bottom T junction
-  {
-    id: '0',
-    type: 't',
-    position: [0, -1, 0],
-    rotation: [0, -Math.PI / 2, Math.PI],
-    showSides: 'all' as Side,
-    connections: ['17', '1', '16'],
-    entrances: [1, 0, 1],
-  },
-  // front top curve
-  {
-    id: '16',
-    type: 'quarter',
-    position: [0, -1, -1],
-    rotation: [0, -Math.PI / 2, 0],
-    showSides: 'all' as Side,
-    connections: ['110', '0'],
-    entrances: [0, 2],
-  },
-  // top front curve
-  {
-    id: '17',
-    type: 'quarter',
-    position: [0, -1, 1],
-    rotation: [0, Math.PI / 2, 0],
-    showSides: 'all' as Side,
-    connections: ['18', '0'],
-    entrances: [1, 0],
-  },
-  // bottom front curve
-  {
-    id: '18',
-    type: 'quarter',
-    position: [0, -2, 1],
-    rotation: [0, Math.PI / 2, Math.PI / 2],
-    showSides: 'all' as Side,
-    connections: ['19', '17'],
-    entrances: [1, 0],
-  },
-  //
-  {
-    id: '19',
-    type: 'straight',
-    position: [0, -2, 0],
-    rotation: [Math.PI / 2, 0, 0],
-    showSides: 'all' as Side,
-    connections: ['110', '18'],
-    entrances: [1, 0],
-  },
-  // back bottom curve
-  {
-    id: '110',
-    type: 'quarter',
-    position: [0, -2, -1],
-    rotation: [Math.PI / 2, Math.PI / 2, Math.PI / 2],
-    showSides: 'all' as Side,
-    connections: ['16', '19'],
-    entrances: [0, 0],
-  },
-];
-
-export const defaultLevel: Level = {
-  name: 'Default level',
-  description: 'Default level',
-  startingTileId: '1',
-  tiles: defaultTiles,
 };
 
 export type ScreenArrow = {
@@ -422,8 +263,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   updateTileAction: (tileId, action) => {
     const s = get();
     const level = s.levels.find((l) => l.id === s.currentLevelId)!;
-    const t = level.tiles.find((tile) => tile.id === tileId) as TarkTile;
-    const updated: TarkTile = {
+    const t = level.tiles.find((tile) => tile.id === tileId) as ButtonTile;
+    const updated: ButtonTile = {
       ...t,
       action: { ...(t.action || defaultAction), ...action },
     };
@@ -707,7 +548,10 @@ export const deserializeLevel = (level: DbLevel): Level => {
     id: level.id,
     name: level.name,
     description: level.description,
-    tiles: data.tiles,
+    tiles: data.tiles.map((t) =>
+      // @ts-expect-error migration
+      t.type === 'tark' ? { ...t, type: 'button' } : t,
+    ),
     startingTileId: data.startingTileId,
   };
 };
