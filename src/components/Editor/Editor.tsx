@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { TransformControls as TransformControlsImpl } from 'three-stdlib';
 import { TransformControls, Grid, Html } from '@react-three/drei';
 
@@ -20,6 +20,8 @@ import { useRefMap } from '@/util/react';
 import { DoubleSide, Euler, Mesh, Vector3 } from 'three';
 
 import styles from './editor.module.css';
+import { post } from '@/util/network';
+import { TILE_HALF_WIDTH } from '@/game/constants';
 
 type EditorProps = {
   setOrbitEnabled: (enabled: boolean) => void;
@@ -44,7 +46,8 @@ const wtfRotations: Triple[] = [
 ];
 
 const Editor = ({ setOrbitEnabled }: EditorProps) => {
-  const level = useGameStore((state) => state.level);
+  const levels = useGameStore((state) => state.levels);
+  const currentLevelId = useGameStore((state) => state.currentLevelId);
   const selectedTileId = useGameStore((state) => state.selectedTileId);
   const setSelectedTileId = useGameStore((state) => state.setSelectedTileId);
   const hoverTileId = useGameStore((state) => state.hoverTileId);
@@ -60,9 +63,18 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
   const autoSnap = useGameStore((state) => state.autoSnap);
   const [tileRefs, setTileRefs] = useRefMap<Mesh>();
 
-  const selectedTile = level.find((tile) => tile.id === selectedTileId);
+  const level = useMemo(() => {
+    if (currentLevelId) {
+      return levels.find((l) => l.id === currentLevelId);
+    }
+  }, [levels, currentLevelId]);
+  const selectedTile = level?.tiles?.find((tile) => tile.id === selectedTileId);
 
-  const [gridPosition, setGridPosition] = useState([0, 0, 0]);
+  const [gridPosition, setGridPosition] = useState([
+    TILE_HALF_WIDTH,
+    0,
+    TILE_HALF_WIDTH,
+  ]);
   const [gridRotation, setGridRotation] = useState(0);
   const [draggingTransform, setDraggingTransform] = useState(false);
   const [overTransform, setOverTransform] = useState(false);
@@ -256,57 +268,58 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
         ></TransformControls>
       )}
 
-      {level.map((tile) => {
-        return (
-          <mesh
-            key={tile.id}
-            position={tile.position}
-            onClick={(e) => {
-              // Don't check while dragging to avoid mouseup on
-              // transformcontrols causing a click to select a different tile
-              if (tile.id !== selectedTileId && !draggingTransform) {
-                e.stopPropagation();
-                setShowCursor(false);
-                setSelectedTileId(tile.id);
-              }
-            }}
-            onPointerOver={(e) => {
-              if (
-                tile.id !== hoverTileId &&
-                !draggingTransform &&
-                !overTransform &&
-                !showCursor
-              ) {
-                // e.stopPropagation();
-                setHoverTileId(tile.id);
-              }
-            }}
-            onPointerOut={(e) => {
-              if (tile.id === hoverTileId) {
-                // e.stopPropagation();
-                setHoverTileId(null);
-              }
-            }}
-            ref={setTileRefs(tile.id)}
-          >
-            <Html className={cx('bg-slate-900', styles.idOverlay)}>
-              {tile.id}
-            </Html>
-            <boxGeometry args={[1, 1, 1]} />
-            <meshBasicMaterial
-              opacity={
-                tile.id === selectedTileId
-                  ? 0.3
-                  : tile.id === hoverTileId
-                    ? 0.2
-                    : 0.01
-              }
-              transparent
-              color={'green'}
-            />
-          </mesh>
-        );
-      })}
+      {level &&
+        level.tiles.map((tile) => {
+          return (
+            <mesh
+              key={tile.id}
+              position={tile.position}
+              onClick={(e) => {
+                // Don't check while dragging to avoid mouseup on
+                // transformcontrols causing a click to select a different tile
+                if (tile.id !== selectedTileId && !draggingTransform) {
+                  e.stopPropagation();
+                  setShowCursor(false);
+                  setSelectedTileId(tile.id);
+                }
+              }}
+              onPointerOver={(e) => {
+                if (
+                  tile.id !== hoverTileId &&
+                  !draggingTransform &&
+                  !overTransform &&
+                  !showCursor
+                ) {
+                  // e.stopPropagation();
+                  setHoverTileId(tile.id);
+                }
+              }}
+              onPointerOut={(e) => {
+                if (tile.id === hoverTileId) {
+                  // e.stopPropagation();
+                  setHoverTileId(null);
+                }
+              }}
+              ref={setTileRefs(tile.id)}
+            >
+              <Html className={cx('bg-slate-900', styles.idOverlay)}>
+                {tile.id}
+              </Html>
+              <boxGeometry args={[1, 1, 1]} />
+              <meshBasicMaterial
+                opacity={
+                  tile.id === selectedTileId
+                    ? 0.3
+                    : tile.id === hoverTileId
+                      ? 0.2
+                      : 0.01
+                }
+                transparent
+                color={'green'}
+              />
+            </mesh>
+          );
+        })}
     </group>
   );
 };
@@ -318,10 +331,15 @@ export const EditorUI = ({
   children: React.ReactNode;
   enabled: boolean;
 }) => {
+  const currentLevelId = useGameStore((state) => state.currentLevelId);
+  const levels = useGameStore((state) => state.levels);
   const hoverTileId = useGameStore((state) => state.hoverTileId);
   const selectedTileId = useGameStore((state) => state.selectedTileId);
-  const level = useGameStore((state) => state.level);
-  const selectedTile = level.find((tile) => tile.id === selectedTileId);
+  const createLevel = useGameStore((state) => state.createLevel);
+  const updateCurrentLevel = useGameStore((state) => state.updateCurrentLevel);
+
+  const level = levels.find((l) => l.id === currentLevelId);
+  const selectedTile = level?.tiles?.find((tile) => tile.id === selectedTileId);
   const updateTileAndRecompute = useGameStore(
     (state) => state.updateTileAndRecompute,
   );
@@ -350,6 +368,37 @@ export const EditorUI = ({
 
       <div
         className={cx(
+          styles.topToolbar,
+          'bg-slate-900 text-sm flex gap-2 flex-row',
+        )}
+        style={{
+          display: enabled ? '' : 'none',
+        }}
+      >
+        <div
+          className={cx(styles.toolbarButton, 'bg-gray-700', {
+            [styles.selected]: showCursor,
+          })}
+          onClick={async (e) => {
+            e.stopPropagation();
+            e.preventDefault();
+            createLevel({
+              name: 'New Level',
+              description: 'New Level',
+              tiles: [],
+              startingTileId: '',
+            });
+          }}
+        >
+          New Level
+        </div>
+        <div>
+          {level?.id ? <div>Level ID: {level?.id}</div> : <div>New level</div>}
+        </div>
+      </div>
+
+      <div
+        className={cx(
           styles.bottomToolbar,
           'bg-slate-900 text-sm flex gap-2 flex-row',
         )}
@@ -357,16 +406,18 @@ export const EditorUI = ({
           display: enabled ? '' : 'none',
         }}
       >
-        <div className={cx(styles.toolbarItem, 'bg-gray-700')}>
+        <div className={cx(styles.toolbarItem, styles.keyboard, 'bg-gray-700')}>
           <div className="key">g</div> <div>Rotate Grid</div>
         </div>
         {selectedTileId && (
-          <div className={cx(styles.toolbarItem, 'bg-gray-700')}>
+          <div
+            className={cx(styles.toolbarItem, styles.keyboard, 'bg-gray-700')}
+          >
             <div className="key">123</div> <div>Transform mode</div>
           </div>
         )}
         <div
-          className={cx(styles.toolbarButton, 'bg-gray-700', {
+          className={cx(styles.toolbarButton, styles.keyboard, 'bg-gray-700', {
             [styles.selected]: showCursor,
           })}
           onClick={(e) => {
@@ -379,9 +430,14 @@ export const EditorUI = ({
         </div>
         {showCursor && [
           <div
-            className={cx(styles.toolbarButton, 'bg-gray-700', {
-              [styles.selected]: createType === 't',
-            })}
+            className={cx(
+              styles.toolbarButton,
+              styles.keyboard,
+              'bg-gray-700',
+              {
+                [styles.selected]: createType === 't',
+              },
+            )}
             key="t"
             onClick={(e) => {
               e.stopPropagation();
@@ -392,9 +448,14 @@ export const EditorUI = ({
             <div className="key">j</div> <div>Junction</div>
           </div>,
           <div
-            className={cx(styles.toolbarButton, 'bg-gray-700', {
-              [styles.selected]: createType === 'straight',
-            })}
+            className={cx(
+              styles.toolbarButton,
+              styles.keyboard,
+              'bg-gray-700',
+              {
+                [styles.selected]: createType === 'straight',
+              },
+            )}
             key="str8"
             onClick={(e) => {
               e.stopPropagation();
@@ -405,9 +466,14 @@ export const EditorUI = ({
             <div className="key">s</div> <div>Straight</div>
           </div>,
           <div
-            className={cx(styles.toolbarButton, 'bg-gray-700', {
-              [styles.selected]: createType === 'quarter',
-            })}
+            className={cx(
+              styles.toolbarButton,
+              styles.keyboard,
+              'bg-gray-700',
+              {
+                [styles.selected]: createType === 'quarter',
+              },
+            )}
             key="q"
             onClick={(e) => {
               e.stopPropagation();
@@ -437,6 +503,23 @@ export const EditorUI = ({
               </div>
               <div className="mb-3">
                 Entrances: {selectedTile.entrances.join(', ')}
+              </div>
+              <div className="mb-3">
+                <label className="mb-1 block" htmlFor="st">
+                  Starting Tile?
+                </label>
+                <input
+                  id="st"
+                  type="checkbox"
+                  checked={level?.startingTileId === selectedTile.id}
+                  onChange={(e) => {
+                    if (level?.startingTileId !== selectedTile.id) {
+                      updateCurrentLevel({
+                        startingTileId: selectedTile.id,
+                      });
+                    }
+                  }}
+                />
               </div>
               <div className="mb-3">
                 <label className="mb-1 block">Sides</label>
@@ -498,8 +581,8 @@ export const EditorUI = ({
                             });
                           }}
                         >
-                          {level
-                            .find(
+                          {level?.tiles
+                            ?.find(
                               (tile): tile is RailTile =>
                                 tile.id === connection,
                             )

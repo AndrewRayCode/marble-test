@@ -36,6 +36,7 @@ import Toggle from './Tiles/Toggle';
 import Straightaway from './Tiles/Straightaway';
 import QuarterTurn from './Tiles/QuarterTurn';
 import Junction from './Tiles/Junction';
+import { Level } from '@prisma/client';
 
 const lowest = (a: {
   left: number;
@@ -61,7 +62,11 @@ const screenRight = new Vector2(1, 0);
 const screenUp = new Vector2(0, -1);
 const screenDown = new Vector2(0, 1);
 
-const Game = () => {
+type GameProps = {
+  dbLevels: Level[];
+};
+
+const Game = ({ dbLevels }: GameProps) => {
   const [, key] = useKeyboardControls();
 
   const buddies = useGameStore((state) => state.buddies);
@@ -71,12 +76,13 @@ const Game = () => {
   const setCurveProgress = useGameStore((state) => state.setCurveProgress);
   const setCurrentTile = useGameStore((state) => state.setCurrentTile);
   const currentCurveIndex = useGameStore((state) => state.currentCurveIndex);
+  const levels = useGameStore((state) => state.levels);
   const setCurrentCurveIndex = useGameStore(
     (state) => state.setCurrentCurveIndex,
   );
   const debug = useGameStore((state) => state.debug);
   const currentTile = useGameStore((state) => state.currentTile);
-  const level = useGameStore((state) => state.level);
+  const currentLevelId = useGameStore((state) => state.currentLevelId);
   const setMomentum = useGameStore((state) => state.setMomentum);
   const setEnteredFrom = useGameStore((state) => state.setEnteredFrom);
   const setNextConnection = useGameStore((state) => state.setNextConnection);
@@ -102,11 +108,17 @@ const Game = () => {
     [tilesComputed, currentTile],
   );
 
+  const level = useMemo(() => {
+    if (currentLevelId) {
+      return levels.find((l) => l.id === currentLevelId);
+    }
+  }, [levels, currentLevelId]);
+
   useKeyPress('edit', () => setIsEditing(!isEditing));
   useKeyPress('debug', toggleDebug);
   useKeyPress('reset', () => {
     console.log('Resetting game!');
-    resetLevel(level);
+    resetLevel();
   });
 
   const [playBtnSfx] = useSound(buttonSfx, { volume: 0.5 });
@@ -116,15 +128,19 @@ const Game = () => {
     if (!gameStarted) {
       setGameStarted(true);
       console.log('Starting game');
-      resetLevel(level);
+      resetLevel();
     }
-  }, [level, gameStarted, setGameStarted, resetLevel]);
+  }, [gameStarted, setGameStarted, resetLevel]);
 
   useFrame((state, delta) => {
     const s = useGameStore.getState();
 
+    if (!level || !currentTile) {
+      return;
+    }
+
     const tileScreen = toScreen(
-      new Vector3(...currentTile!.position),
+      new Vector3(...currentTile.position),
       camera,
       viewport,
     );
@@ -202,7 +218,7 @@ const Game = () => {
       marbleRef.current.position.copy(point);
 
       // Check for switch presses
-      level
+      level.tiles
         .filter((t): t is TarkTile => t.type === 'tark')
         .forEach((tark) => {
           const isNear = point.distanceTo(new Vector3(...tark.position)) < 0.2;
@@ -336,7 +352,7 @@ const Game = () => {
             // fall out of level!
             return;
           } else {
-            nextTile = level.find(
+            nextTile = level.tiles.find(
               (tile): tile is TrackTile => tile.id === nextId,
             )!;
           }
@@ -425,17 +441,18 @@ const Game = () => {
       {/* On-screen arrows */}
       <OnScreenArrows />
 
-      {level.map((tile) => {
-        if (tile.type === 'straight') {
-          return <Straightaway key={tile.id} tile={tile} />;
-        } else if (tile.type === 'quarter') {
-          return <QuarterTurn key={tile.id} tile={tile} />;
-        } else if (tile.type === 't') {
-          return <Junction key={tile.id} tile={tile} />;
-        } else if (tile.type === 'tark') {
-          return <Toggle key={tile.id} tile={tile} />;
-        }
-      })}
+      {level &&
+        level.tiles.map((tile) => {
+          if (tile.type === 'straight') {
+            return <Straightaway key={tile.id} tile={tile} />;
+          } else if (tile.type === 'quarter') {
+            return <QuarterTurn key={tile.id} tile={tile} />;
+          } else if (tile.type === 't') {
+            return <Junction key={tile.id} tile={tile} />;
+          } else if (tile.type === 'tark') {
+            return <Toggle key={tile.id} tile={tile} />;
+          }
+        })}
 
       {isEditing && (
         <EditorComponent
@@ -444,7 +461,8 @@ const Game = () => {
       )}
 
       {debug &&
-        level.map((tile) => {
+        level &&
+        level.tiles.map((tile) => {
           if (isRailTile(tile)) {
             return (
               <mesh key={tile.id}>
@@ -521,7 +539,7 @@ const Game = () => {
   );
 };
 
-export default function ThreeScene() {
+export default function ThreeScene(props: GameProps) {
   const playerMomentum = useGameStore((state) => state.playerMomentum);
   // const curveProgress = useStore((state) => state.curveProgress);
   const isEditing = useGameStore((state) => state.isEditing);
@@ -552,7 +570,7 @@ export default function ThreeScene() {
       >
         <EditorUI enabled={isEditing}>
           <Canvas camera={{ position: [0, 0, 6] }} className="h-full w-full">
-            <Game />
+            <Game {...props} />
           </Canvas>
           {debug && (
             <div className="absolute bottom-0 right-0 h-16 w-64 z-2 bg-slate-900 shadow-lg rounded-lg p-2 text-sm">

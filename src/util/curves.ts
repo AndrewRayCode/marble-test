@@ -208,6 +208,7 @@ export const tStraights = [
   ),
 ];
 
+// Generate the computed / runtime data for this tile
 export const computeTrackTile = (
   tile: RailTile | JunctionTile,
   transform?: Transform,

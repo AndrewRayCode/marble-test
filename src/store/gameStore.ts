@@ -1,5 +1,7 @@
 import { computeTrackTile } from '@/util/curves';
 import { calculateExitBuddies, deg2Rad, TileExit } from '@/util/math';
+import { post } from '@/util/network';
+import { Level as DbLevel } from '@prisma/client';
 import { useKeyboardControls } from '@react-three/drei';
 import { useEffect } from 'react';
 import { CubicBezierCurve3, Vector3 } from 'three';
@@ -77,9 +79,15 @@ export type TrackTile = RailTile | JunctionTile;
 // All valid level tiles
 export type Tile = RailTile | JunctionTile | TarkTile;
 
-export type Level = Tile[];
+export type Level = Omit<DbLevel, 'id' | 'data'> & {
+  id?: string;
+  name: string;
+  description: string;
+  startingTileId: string;
+  tiles: Tile[];
+};
 
-export const level: Level = [
+export const defaultTiles: Tile[] = [
   {
     id: '1',
     type: 'straight',
@@ -238,6 +246,13 @@ export const level: Level = [
   },
 ];
 
+export const defaultLevel: Level = {
+  name: 'Default level',
+  description: 'Default level',
+  startingTileId: '1',
+  tiles: defaultTiles,
+};
+
 export type ScreenArrow = {
   d: number;
   position: Vector3;
@@ -249,6 +264,10 @@ export type ScreenArrows = ScreenArrow[];
 export interface GameStore {
   debug: boolean;
   toggleDebug: () => void;
+
+  levels: Level[];
+  createLevel: (level: Omit<Level, 'id'>) => Promise<void>;
+  updateCurrentLevel: (level: Partial<Level>) => void;
 
   buddies: TileExit[][];
   setBuddies: (buddies: TileExit[][]) => void;
@@ -275,8 +294,8 @@ export interface GameStore {
   // Game state
   gameStarted: boolean;
   setGameStarted: (gameStarted: boolean) => void;
-  level: Level;
-  setLevel: (level: Level) => void;
+  currentLevelId: string | null;
+  setCurrentLevelId: (levelId: string) => void;
   curveProgress: number;
   setCurveProgress: (progress: number) => void;
   currentTile: TrackTile | null;
@@ -320,12 +339,46 @@ export interface GameStore {
   screenArrows: ScreenArrows;
   setScreenArrows: (arrows: ScreenArrows) => void;
 
-  resetLevel: (leveL: Level) => void;
+  resetLevel: () => void;
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
   debug: false,
   toggleDebug: () => set((state) => ({ debug: !state.debug })),
+
+  levels: [],
+  createLevel: async (newLevel) => {
+    const s = get();
+    const { level } = await post('/api/levels/create', {
+      level: {
+        name: newLevel.name,
+        description: newLevel.description,
+        data: {
+          tiles: newLevel.tiles,
+          startingTileId: newLevel.startingTileId,
+        },
+      },
+    });
+    const deserialized: Level = {
+      id: level.id,
+      name: level.name,
+      description: level.description,
+      tiles: level.data.tiles,
+      startingTileId: level.data.startingTileId,
+    };
+    set({ levels: [...s.levels, deserialized] });
+    s.setCurrentLevelId(level.id);
+    s.resetLevel();
+  },
+  updateCurrentLevel: (data) =>
+    set((s) => {
+      const level = s.levels.find((l) => l.id === s.currentLevelId)!;
+      return {
+        levels: s.levels.map((l) =>
+          l.id === s.currentLevelId ? { ...level, ...data } : l,
+        ),
+      };
+    }),
 
   buddies: [],
   setBuddies: (buddies) => set({ buddies }),
@@ -336,44 +389,50 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setSelectedTileId: (id) => set({ selectedTileId: id }),
   hoverTileId: null,
   setHoverTileId: (id) => set({ hoverTileId: id }),
-  addTile: (tile) =>
-    set((state) => {
-      const level = [...state.level, tile];
-      if (isRailTile(tile) || isJunctionTile(tile)) {
-        state.setTileComputed(tile.id, computeTrackTile(tile));
-      }
-      return { level };
-    }),
-  deleteTile: (tileId: string) =>
-    set((state) => {
-      const level = state.level.filter((tile) => tile.id !== tileId);
-      const tilesComputed = { ...state.tilesComputed };
-      delete tilesComputed[tileId];
-      return { level };
-    }),
+  addTile: (tile) => {
+    const s = get();
+    const level = s.levels.find((l) => l.id === s.currentLevelId)!;
+    if (isRailTile(tile) || isJunctionTile(tile)) {
+      s.setTileComputed(tile.id, computeTrackTile(tile));
+    }
+    s.updateCurrentLevel({ tiles: [...level.tiles, tile] });
+  },
+  deleteTile: (tileId: string) => {
+    const s = get();
+    const level = s.levels.find((l) => l.id === s.currentLevelId)!;
+    const tilesComputed = { ...s.tilesComputed };
+    delete tilesComputed[tileId];
+    s.setTilesComputed(tilesComputed);
+    s.updateCurrentLevel({
+      tiles: level.tiles.filter((tile) => tile.id !== tileId),
+    });
+  },
   updateTileAndRecompute: <T extends Tile>(
     tileId: string,
     update: Partial<T>,
-  ) =>
-    set((state) => {
-      const t = state.level.find((tile) => tile.id === tileId) as T;
-      if (!t) {
-        return {};
-      }
-      const updated = { ...t, ...update } as T;
-      const level = state.level.map((tile) =>
-        tileId === tile.id ? updated : tile,
-      );
-      if (isRailTile(updated) || isJunctionTile(updated)) {
-        state.setTileComputed(updated.id, computeTrackTile(updated));
-      }
-      return { level };
-    }),
-  updateTile: (tile) =>
-    set((state) => {
-      const level = state.level.map((t) => (t.id === tile.id ? tile : t));
-      return { level };
-    }),
+  ) => {
+    const s = get();
+    const level = s.levels.find((l) => l.id === s.currentLevelId)!;
+    const t = level.tiles.find((tile) => tile.id === tileId) as T;
+    if (!t) {
+      return {};
+    }
+    const updated = { ...t, ...update } as T;
+    const tiles = level.tiles.map((tile) =>
+      tileId === tile.id ? updated : tile,
+    );
+    if (isRailTile(updated) || isJunctionTile(updated)) {
+      s.setTileComputed(updated.id, computeTrackTile(updated));
+    }
+    s.updateCurrentLevel({ tiles });
+  },
+  updateTile: (tile) => {
+    const s = get();
+    const level = s.levels.find((l) => l.id === s.currentLevelId)!;
+    s.updateCurrentLevel({
+      tiles: level.tiles.map((t) => (t.id === tile.id ? tile : t)),
+    });
+  },
   showCursor: false,
   setShowCursor: (showCursor) => set({ showCursor }),
   createType: 'straight',
@@ -381,11 +440,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   gameStarted: false,
   setGameStarted: (gameStarted) => set({ gameStarted }),
-  level,
-  setLevel: (level) => set({ level }),
+  currentLevelId: null,
+  setCurrentLevelId: (currentLevelId) => set({ currentLevelId }),
   curveProgress: 0,
   setCurveProgress: (progress) => set({ curveProgress: progress }),
-  currentTile: level[0] as TrackTile,
+  currentTile: null,
   setCurrentTile: (tile) => set({ currentTile: tile }),
 
   currentCurveIndex: 0,
@@ -423,7 +482,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
     })),
   autoSnap: (updatedComputed) => {
     const s = get();
-    const tilesById = s.level.reduce<Record<string, Tile>>((acc, tile) => {
+    const level = s.levels.find((l) => l.id === s.currentLevelId)!;
+    const tilesById = level.tiles.reduce<Record<string, Tile>>((acc, tile) => {
       acc[tile.id] = tile;
       return acc;
     }, {});
@@ -480,8 +540,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }),
   applyAction: (action) => {
     const s = get();
+    const level = s.levels.find((l) => l.id === s.currentLevelId)!;
     action.targetTiles.forEach((targetId) => {
-      const target = s.level.find((t) => t.id === targetId)!;
+      const target = level.tiles.find((t) => t.id === targetId)!;
       if (action!.type === 'rotation') {
         const start = s.transforms[targetId]?.rotation ||
           target?.rotation || [0, 0, 0];
@@ -543,9 +604,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
   screenArrows: [],
   setScreenArrows: (screenArrows) => set({ screenArrows }),
 
-  resetLevel: (level) =>
+  resetLevel: () =>
     set((state) => {
-      const tilesComputed = level.reduce<Record<string, TileComputed>>(
+      if (!state.currentLevelId) {
+        return {};
+      }
+      const level = state.levels.find((l) => l.id === state.currentLevelId)!;
+      const tilesComputed = level.tiles.reduce<Record<string, TileComputed>>(
         (acc, tile) =>
           isRailTile(tile) || isJunctionTile(tile)
             ? {
@@ -563,7 +628,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         nextConnection: -1,
         playerMomentum: 0,
         tilesComputed,
-        currentTile: level.find((l) => l.id === '1') as TrackTile,
+        currentTile: level.tiles.find(
+          (t) => t.id === level.startingTileId,
+        ) as TrackTile,
       };
     }),
 }));

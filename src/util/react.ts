@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react';
 
-const useRefMap = <T = unknown>() => {
+const useRefMap = <T>() => {
   const itemsRef = useRef(new Map<string | number, T>());
 
   const setRef = useCallback(
