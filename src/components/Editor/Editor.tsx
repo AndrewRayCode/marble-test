@@ -49,13 +49,16 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
   const setSelectedTileId = useGameStore((state) => state.setSelectedTileId);
   const hoverTileId = useGameStore((state) => state.hoverTileId);
   const setHoverTileId = useGameStore((state) => state.setHoverTileId);
-  const updateTile = useGameStore((state) => state.updateTile);
+  const updateTileAndRecompute = useGameStore(
+    (state) => state.updateTileAndRecompute,
+  );
   const addTile = useGameStore((state) => state.addTile);
   const deleteTile = useGameStore((state) => state.deleteTile);
   const showCursor = useGameStore((state) => state.showCursor);
   const setShowCursor = useGameStore((state) => state.setShowCursor);
   const createType = useGameStore((state) => state.createType);
-  const [tileRefs, setTileRefs] = useRefMap();
+  const autoSnap = useGameStore((state) => state.autoSnap);
+  const [tileRefs, setTileRefs] = useRefMap<Mesh>();
 
   const selectedTile = level.find((tile) => tile.id === selectedTileId);
 
@@ -202,6 +205,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
                 actionType: 'toggle',
               });
             }
+            autoSnap();
           }}
         >
           <boxGeometry args={[1, 1, 1]} />
@@ -214,7 +218,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
           translationSnap={0.5}
           size={0.7}
           ref={transform}
-          object={tileRefs.get(selectedTileId)}
+          object={tileRefs.get(selectedTileId)!}
           rotationSnap={Math.PI / 4}
           onPointerOver={(e) => {
             setOverTransform(true);
@@ -223,9 +227,9 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
             setOverTransform(false);
           }}
           onChange={(e) => {
-            const target = tileRefs.get(selectedTileId);
+            const target = tileRefs.get(selectedTileId)!;
             if (target) {
-              updateTile(
+              updateTileAndRecompute(
                 selectedTileId,
                 transformMode === 'translate'
                   ? {
@@ -246,6 +250,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
                       }
                     : {},
               );
+              autoSnap();
             }
           }}
         ></TransformControls>
@@ -317,7 +322,9 @@ export const EditorUI = ({
   const selectedTileId = useGameStore((state) => state.selectedTileId);
   const level = useGameStore((state) => state.level);
   const selectedTile = level.find((tile) => tile.id === selectedTileId);
-  const updateTile = useGameStore((state) => state.updateTile);
+  const updateTileAndRecompute = useGameStore(
+    (state) => state.updateTileAndRecompute,
+  );
   const createType = useGameStore((state) => state.createType);
   const setCreateType = useGameStore((state) => state.setCreateType);
   const showCursor = useGameStore((state) => state.showCursor);
@@ -437,7 +444,7 @@ export const EditorUI = ({
                   className={cx(styles.input, 'mb-2 w-full')}
                   value={selectedTile.showSides}
                   onChange={(e) => {
-                    updateTile(selectedTileId, {
+                    updateTileAndRecompute(selectedTileId, {
                       showSides: e.target.value as Side,
                     });
                   }}
@@ -469,7 +476,7 @@ export const EditorUI = ({
                           className={cx(styles.input, 'mb-2 w-full')}
                           value={connection!}
                           onChange={(e) => {
-                            updateTile(selectedTileId, {
+                            updateTileAndRecompute(selectedTileId, {
                               connections: selectedTile.connections.map(
                                 (c, j) => (i === j ? e.target.value : c),
                               ) as StrTrip,
@@ -484,7 +491,7 @@ export const EditorUI = ({
                           className={cx(styles.input, 'mb-2 w-full')}
                           value={selectedTile.entrances[i]!}
                           onChange={(e) => {
-                            updateTile(selectedTileId, {
+                            updateTileAndRecompute(selectedTileId, {
                               entrances: selectedTile.entrances.map((c, j) =>
                                 i === j ? parseInt(e.target.value) : c,
                               ) as NumTrip,

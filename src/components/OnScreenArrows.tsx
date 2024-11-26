@@ -6,9 +6,9 @@ import cx from 'classnames';
 
 import { useGameStore } from '@/store/gameStore';
 import { useRefMap } from '@/util/react';
-import { toWorld } from '@/util/math';
 
 import styles from './styles.module.css';
+import { Group } from 'three';
 
 const arrowLookup = {
   left: '⭠',
@@ -24,14 +24,16 @@ const arrowLookup = {
  */
 const OnScreenArrows = () => {
   const currentTile = useGameStore((state) => state.currentTile);
-  const currentExitRefs = useGameStore((state) => state.currentExitRefs);
-  const [arrowRefs, setArrowRef] = useRefMap();
+  const tilesComputed = useGameStore((state) => state.tilesComputed);
+  const [arrowRefs, setArrowRef] = useRefMap<Group>();
+  const [htmlRefs, setHtmlRefs] = useRefMap<HTMLDivElement>();
 
   // For every exit position of this junction, there is a *potential* arrow
   // to show
   const arrowPositions = useMemo(
-    () => (currentTile?.type === 't' ? currentExitRefs.map(toWorld) : []),
-    [currentExitRefs, currentTile],
+    () =>
+      currentTile?.type === 't' ? tilesComputed[currentTile.id]?.exits : [],
+    [currentTile, tilesComputed],
   );
 
   useEffect(
@@ -46,7 +48,7 @@ const OnScreenArrows = () => {
         arrowPositions.forEach((_, i) => {
           const screenData = state.screenArrows[i];
           const arrowRef = arrowRefs.get(i);
-          const htmlRef = arrowRefs.get(`${i}_text`) as HTMLDivElement;
+          const htmlRef = htmlRefs.get(i);
           // I have no idea why this can happen - mount issues?
           if (!htmlRef) {
             return;
@@ -64,7 +66,7 @@ const OnScreenArrows = () => {
           }
         });
       }),
-    [arrowRefs, arrowPositions],
+    [arrowRefs, htmlRefs, arrowPositions],
   );
 
   // Not all of these arrows will get shown, they are dynamically hidden/shown
@@ -72,10 +74,7 @@ const OnScreenArrows = () => {
   return arrowPositions.map((_, i) => (
     <group ref={setArrowRef(i)} key={i}>
       <Html>
-        <div
-          className={cx(styles.screenKey, 'key')}
-          ref={setArrowRef(`${i}_text`)}
-        ></div>
+        <div className={cx(styles.screenKey, 'key')} ref={setHtmlRefs(i)}></div>
       </Html>
     </group>
   ));
