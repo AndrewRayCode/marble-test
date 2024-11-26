@@ -28,7 +28,7 @@ import {
 } from '@/store/gameStore';
 import { toScreen } from '@/util/math';
 import OnScreenArrows from './OnScreenArrows';
-import EditorComponent, { EditorUI } from './Editor/Editor';
+import EditorComponent from './Editor/Editor';
 
 import buttonSfx from '@/public/button.mp3';
 
@@ -39,6 +39,7 @@ import QuarterTurn from './Tiles/QuarterTurn';
 import Junction from './Tiles/Junction';
 import { Level } from '@prisma/client';
 import { JsonObject } from '@prisma/client/runtime/library';
+import EditorUI from './Editor/EditorUI';
 
 const lowest = (a: {
   left: number;
@@ -118,8 +119,7 @@ const Game = () => {
 
   useKeyPress('edit', () => setIsEditing(!isEditing));
   useKeyPress('debug', toggleDebug);
-  useKeyPress('reset', () => {
-    console.log('Resetting game!');
+  useKeyPress('backslash', () => {
     resetLevel();
   });
 
@@ -233,7 +233,7 @@ const Game = () => {
             if (enabled && isNear) {
               playBtnSfx();
               s.setEnabledBooleanSwitchesFor(-1, tark.id, false);
-              s.setBooleanSwitch(tark.id, !on);
+              // s.setBooleanSwitch(tark.id, !on);
 
               if (action) {
                 s.applyAction(action);
@@ -464,13 +464,16 @@ const Game = () => {
 
       {debug &&
         level &&
-        level.tiles.map((tile) => {
-          if (isRailTile(tile)) {
-            return (
-              <mesh key={tile.id}>
-                <Html className="bg-slate-900 p-1" position={tile.position}>
-                  {tile.id}
-                </Html>
+        level.tiles.map((tile) => (
+          <group key={tile.id}>
+            <Html
+              className={cx('bg-slate-900 idOverlay')}
+              position={tile.position}
+            >
+              {tile.id}
+            </Html>
+            {isRailTile(tile) ? (
+              <mesh>
                 <tubeGeometry
                   args={[
                     tilesComputed[tile.id]?.curves?.[0],
@@ -482,13 +485,8 @@ const Game = () => {
                 />
                 <meshStandardMaterial color="blue" wireframe />
               </mesh>
-            );
-          } else if (tile.type === 't') {
-            return (
-              <group key={tile.id}>
-                <Html className="bg-slate-900 p-1" position={tile.position}>
-                  {tile.id}
-                </Html>
+            ) : (
+              <group>
                 <mesh>
                   <tubeGeometry
                     args={[
@@ -526,9 +524,9 @@ const Game = () => {
                   <meshStandardMaterial color="blue" wireframe />
                 </mesh>
               </group>
-            );
-          }
-        })}
+            )}
+          </group>
+        ))}
 
       {debug && currentTile && (
         <mesh position={currentTile.position}>
@@ -592,18 +590,23 @@ export default function ThreeScene({ dbLevels }: GameProps) {
           { name: 'left', keys: ['ArrowLeft'] },
           { name: 'right', keys: ['ArrowRight'] },
           { name: 'debug', keys: ['d'] },
-          { name: 'reset', keys: ['r'] },
           // Editor shortcuts, since you can't stack keyboardcontrols
           { name: 'edit', keys: ['e'] },
-          { name: 'gridRotate', keys: ['g'] },
-          { name: 'add', keys: ['a'] },
-          { name: 'delete', keys: ['x'] },
+          { name: 'a', keys: ['a'] },
           { name: 'one', keys: ['1'] },
           { name: 'two', keys: ['2'] },
           { name: 'three', keys: ['3'] },
           { name: 'j', keys: ['j'] },
           { name: 's', keys: ['s'] },
           { name: 'q', keys: ['q'] },
+          { name: 'b', keys: ['b'] },
+          { name: 'r', keys: ['r'] },
+          { name: 'x', keys: ['x'] },
+          { name: 't', keys: ['t'] },
+          { name: 'g', keys: ['g'] },
+          { name: 'm', keys: ['m'] },
+          { name: 'esc', keys: ['Escape'] },
+          { name: 'backslash', keys: ['Backslash'] },
         ]}
       >
         <EditorUI enabled={isEditing}>

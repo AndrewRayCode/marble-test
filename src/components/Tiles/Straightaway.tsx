@@ -6,12 +6,19 @@ import { toWorld } from '@/util/math';
 import { useRefMap } from '@/util/react';
 import { pointAt45, straightCurve, tStraights, useCurve } from '@/util/curves';
 
-const Straightaway = ({ tile }: { tile: RailTile }) => {
+const Straightaway = ({
+  tile,
+  opacity,
+}: {
+  tile: RailTile;
+  opacity?: number;
+}) => {
   const { position, rotation, showSides } = tile;
   const c1 = useCurve(straightCurve);
   const debug = useGameStore((state) => state.debug);
   const setExitPositions = useGameStore((state) => state.setExitPositions);
   const [exitRefs, setExitRef] = useRefMap<Group>();
+  const matOpacity = opacity || 1;
 
   const exits = useMemo(
     () =>
@@ -46,6 +53,8 @@ const Straightaway = ({ tile }: { tile: RailTile }) => {
         <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
           <tubeGeometry args={[c1, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
+            opacity={matOpacity}
+            transparent={matOpacity < 1}
             roughness={0}
             metalness={1.0}
             wireframe={debug}
@@ -58,6 +67,8 @@ const Straightaway = ({ tile }: { tile: RailTile }) => {
         <mesh position={[-pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
           <tubeGeometry args={[c1, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
+            opacity={matOpacity}
+            transparent={matOpacity < 1}
             roughness={0}
             metalness={1.0}
             wireframe={debug}
@@ -70,6 +81,8 @@ const Straightaway = ({ tile }: { tile: RailTile }) => {
         <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}>
           <tubeGeometry args={[c1, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
+            opacity={matOpacity}
+            transparent={matOpacity < 1}
             roughness={0}
             metalness={1.0}
             wireframe={debug}
@@ -82,6 +95,8 @@ const Straightaway = ({ tile }: { tile: RailTile }) => {
         <mesh position={[-pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}>
           <tubeGeometry args={[c1, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
+            opacity={matOpacity}
+            transparent={matOpacity < 1}
             roughness={0}
             metalness={1.0}
             wireframe={debug}

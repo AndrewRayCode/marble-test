@@ -11,14 +11,33 @@ import { useRefMap } from '@/util/react';
 import { Group, Vector3 } from 'three';
 import { useLayoutEffect, useMemo } from 'react';
 import { toWorld } from '@/util/math';
+import { useSpring, a } from '@react-spring/three';
 
-const Junction = ({ tile }: { tile: JunctionTile }) => {
-  const { position, rotation, showSides } = tile;
+const Junction = ({
+  tile,
+  opacity,
+}: {
+  tile: JunctionTile;
+  opacity?: number;
+}) => {
+  const { position: meshPosition, rotation: meshRotation, showSides } = tile;
   const str8 = useCurve(straightCurve);
   const small = useCurve(innerQuarterCurve);
   const debug = useGameStore((state) => state.debug);
+  const transform = useGameStore((state) => state.transforms[tile.id]);
   const setExitPositions = useGameStore((state) => state.setExitPositions);
   const [exitRefs, setExitRef] = useRefMap<Group>();
+  const matOpacity = opacity || 1;
+
+  const { position, rotation } = useSpring({
+    position: transform?.position || meshPosition,
+    rotation: transform?.rotation || meshRotation,
+    config: {
+      mass: 1,
+      tension: 170,
+      friction: 26,
+    },
+  });
 
   const exits = useMemo(
     () =>
@@ -38,14 +57,22 @@ const Junction = ({ tile }: { tile: JunctionTile }) => {
   }, [tile, setExitPositions, exitRefs]);
 
   return (
-    <group position={position} rotation={rotation}>
+    <a.group
+      position={position}
+      rotation={rotation as unknown as [number, number, number]}
+    >
       {exits.map((exit, i) => (
         <group key={i} position={exit} ref={setExitRef(i)}></group>
       ))}
       {debug && (
         <mesh>
           <boxGeometry args={[1, 1, 1]} />
-          <meshStandardMaterial wireframe color="green" />
+          <meshStandardMaterial
+            opacity={matOpacity}
+            transparent={matOpacity < 1}
+            wireframe
+            color="green"
+          />
         </mesh>
       )}
       {/* front right */}
@@ -53,6 +80,8 @@ const Junction = ({ tile }: { tile: JunctionTile }) => {
         <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
           <tubeGeometry args={[small, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
+            opacity={matOpacity}
+            transparent={matOpacity < 1}
             roughness={0}
             metalness={1.0}
             wireframe={debug}
@@ -68,6 +97,8 @@ const Junction = ({ tile }: { tile: JunctionTile }) => {
         >
           <tubeGeometry args={[small, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
+            opacity={matOpacity}
+            transparent={matOpacity < 1}
             roughness={0}
             metalness={1.0}
             wireframe={debug}
@@ -80,6 +111,8 @@ const Junction = ({ tile }: { tile: JunctionTile }) => {
         <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}>
           <tubeGeometry args={[small, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
+            opacity={matOpacity}
+            transparent={matOpacity < 1}
             roughness={0}
             metalness={1.0}
             wireframe={debug}
@@ -95,6 +128,8 @@ const Junction = ({ tile }: { tile: JunctionTile }) => {
         >
           <tubeGeometry args={[small, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
+            opacity={matOpacity}
+            transparent={matOpacity < 1}
             roughness={0}
             metalness={1.0}
             wireframe={debug}
@@ -110,6 +145,8 @@ const Junction = ({ tile }: { tile: JunctionTile }) => {
         >
           <tubeGeometry args={[str8, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
+            opacity={matOpacity}
+            transparent={matOpacity < 1}
             roughness={0}
             metalness={1.0}
             wireframe={debug}
@@ -125,6 +162,8 @@ const Junction = ({ tile }: { tile: JunctionTile }) => {
         >
           <tubeGeometry args={[str8, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
+            opacity={matOpacity}
+            transparent={matOpacity < 1}
             roughness={0}
             metalness={1.0}
             wireframe={debug}
@@ -132,7 +171,7 @@ const Junction = ({ tile }: { tile: JunctionTile }) => {
           />
         </mesh>
       ) : null}
-    </group>
+    </a.group>
   );
 };
 

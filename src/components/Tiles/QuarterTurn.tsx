@@ -9,12 +9,19 @@ import {
 import { useSpring, a } from '@react-spring/three';
 import DebugCurveHandles from './DebugCurveHandles';
 
-const QuarterTurn = ({ tile }: { tile: RailTile }) => {
+const QuarterTurn = ({
+  tile,
+  opacity,
+}: {
+  tile: RailTile;
+  opacity?: number;
+}) => {
   const { position: meshPosition, rotation: meshRotation, showSides } = tile;
   const c1 = useCurve(quarterCurve);
   const c2 = useCurve(innerQuarterCurve);
   const debug = useGameStore((state) => state.debug);
   const transform = useGameStore((state) => state.transforms[tile.id]);
+  const matOpacity = opacity || 1;
 
   // Configure spring animation for rotation
   const { position, rotation } = useSpring({
@@ -41,7 +48,12 @@ const QuarterTurn = ({ tile }: { tile: RailTile }) => {
       {debug && (
         <mesh>
           <boxGeometry args={[1, 1, 1]} />
-          <meshStandardMaterial wireframe color="green" />
+          <meshStandardMaterial
+            opacity={matOpacity}
+            transparent={matOpacity < 1}
+            wireframe
+            color="green"
+          />
         </mesh>
       )}
       {/* front right */}
@@ -49,6 +61,8 @@ const QuarterTurn = ({ tile }: { tile: RailTile }) => {
         <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
           <tubeGeometry args={[c2, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
+            opacity={matOpacity}
+            transparent={matOpacity < 1}
             roughness={0}
             metalness={1.0}
             wireframe={debug}
@@ -61,6 +75,8 @@ const QuarterTurn = ({ tile }: { tile: RailTile }) => {
         <mesh position={[-pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
           <tubeGeometry args={[c1, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
+            opacity={matOpacity}
+            transparent={matOpacity < 1}
             roughness={0}
             metalness={1.0}
             wireframe={debug}
@@ -73,6 +89,8 @@ const QuarterTurn = ({ tile }: { tile: RailTile }) => {
         <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}>
           <tubeGeometry args={[c2, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
+            opacity={matOpacity}
+            transparent={matOpacity < 1}
             roughness={0}
             metalness={1.0}
             wireframe={debug}
@@ -85,6 +103,8 @@ const QuarterTurn = ({ tile }: { tile: RailTile }) => {
         <mesh position={[-pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}>
           <tubeGeometry args={[c1, 70, RAIL_RADIUS, 50, false]} />
           <meshStandardMaterial
+            opacity={matOpacity}
+            transparent={matOpacity < 1}
             roughness={0}
             metalness={1.0}
             wireframe={debug}

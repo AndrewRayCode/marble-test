@@ -1,27 +1,32 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { TransformControls as TransformControlsImpl } from 'three-stdlib';
-import { TransformControls, Grid, Html } from '@react-three/drei';
+import {
+  TransformControls,
+  Grid,
+  TransformControlsProps,
+} from '@react-three/drei';
 
 import {
+  JunctionTile,
   makeId,
-  NumTrip,
   RailTile,
   Side,
-  StrTrip,
+  TarkTile,
   TileBase,
   useGameStore,
   useKeyPress,
 } from '@/store/gameStore';
 
-import cx from 'classnames';
 import { useRefMap } from '@/util/react';
-import { DoubleSide, Euler, Mesh, Vector3 } from 'three';
+import { DoubleSide, Euler, Group, Mesh, Vector3 } from 'three';
 
-import styles from './editor.module.css';
-import { post } from '@/util/network';
 import { TILE_HALF_WIDTH } from '@/game/constants';
+import Straightaway from '../Tiles/Straightaway';
+import QuarterTurn from '../Tiles/QuarterTurn';
+import Junction from '../Tiles/Junction';
+import Toggle from '../Tiles/Toggle';
 
 type EditorProps = {
   setOrbitEnabled: (enabled: boolean) => void;
@@ -45,6 +50,48 @@ const wtfRotations: Triple[] = [
   [0, Math.PI / 2, 0],
 ];
 
+const defaultStraightTile: RailTile = {
+  id: `editor_cursor_${makeId()}`,
+  position: [0, 0, 0],
+  rotation: [0, 0, 0],
+  type: 'straight',
+  showSides: 'all' as Side,
+  connections: [null, null],
+  entrances: [null, null],
+};
+const defaultQuarterTile: RailTile = {
+  id: `editor_cursor_${makeId()}`,
+  position: [0, 0, 0],
+  rotation: [0, 0, 0],
+  type: 'quarter',
+  showSides: 'all' as Side,
+  connections: [null, null],
+  entrances: [null, null],
+};
+const defaultJunctionTile: JunctionTile = {
+  id: `editor_cursor_${makeId()}`,
+  position: [0, 0, 0],
+  rotation: [0, 0, 0],
+  type: 't',
+  showSides: 'all' as Side,
+  connections: [null, null, null],
+  entrances: [null, null, null],
+};
+const defaultTarkTile: TarkTile = {
+  id: `editor_cursor_${makeId()}`,
+  position: [0, 0, 0],
+  rotation: [0, 0, 0],
+  type: 'tark',
+  actionType: 'toggle',
+};
+
+const TransformMemoized = memo(
+  forwardRef(function TransformMemoized(props: TransformControlsProps, ref) {
+    // @ts-expect-error - bad ref types
+    return <TransformControls {...props} ref={ref} />;
+  }),
+);
+
 const Editor = ({ setOrbitEnabled }: EditorProps) => {
   const levels = useGameStore((state) => state.levels);
   const currentLevelId = useGameStore((state) => state.currentLevelId);
@@ -61,7 +108,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
   const setShowCursor = useGameStore((state) => state.setShowCursor);
   const createType = useGameStore((state) => state.createType);
   const autoSnap = useGameStore((state) => state.autoSnap);
-  const [tileRefs, setTileRefs] = useRefMap<Mesh>();
+  const [tileRefs, setTileRefs] = useRefMap<Group>();
 
   const level = useMemo(() => {
     if (currentLevelId) {
@@ -70,17 +117,19 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
   }, [levels, currentLevelId]);
   const selectedTile = level?.tiles?.find((tile) => tile.id === selectedTileId);
 
+  const targetTileIds =
+    selectedTile?.type === 'tark' ? selectedTile.action?.targetTiles : [];
+
   const [gridPosition, setGridPosition] = useState([
     TILE_HALF_WIDTH,
     0,
     TILE_HALF_WIDTH,
   ]);
+  const [cursorRotation, setCursorRotation] = useState<Triple>([0, 0, 0]);
   const [gridRotation, setGridRotation] = useState(0);
   const [draggingTransform, setDraggingTransform] = useState(false);
   const [overTransform, setOverTransform] = useState(false);
   const [cursorPosition, setCursorPosition] = useState<Triple>([0, 0, 0]);
-
-  const cursorRef = useRef<Mesh>(null);
 
   const cursorSnappedPosition = cursorPosition.map((pos, i) => {
     return (
@@ -91,7 +140,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
     );
   }) as Triple;
 
-  useKeyPress('add', () => {
+  useKeyPress('a', () => {
     if (!showCursor) {
       setHoverTileId(null);
       setSelectedTileId(null);
@@ -99,14 +148,14 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
     setShowCursor(!showCursor);
   });
 
-  useKeyPress('delete', () => {
+  useKeyPress('x', () => {
     if (selectedTileId) {
       setSelectedTileId(null);
       deleteTile(selectedTileId);
     }
   });
 
-  useKeyPress('gridRotate', () => {
+  useKeyPress('g', () => {
     setGridPosition((prev) => {
       if (selectedTile) {
         if (gridRotation === 1) {
@@ -140,7 +189,9 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
   });
 
   const transform = useRef<TransformControlsImpl>(null);
-  const [transformMode, setTransformMode] = useState('translate');
+  const [transformMode, setTransformMode] = useState<
+    'rotate' | 'translate' | 'scale' | null
+  >('translate');
   useEffect(() => {
     if (transform.current) {
       const controls = transform.current;
@@ -156,15 +207,47 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
     }
   }, [transformMode, setOrbitEnabled]);
 
-  useKeyPress('one', () => {
+  useKeyPress('t', () => {
     setTransformMode('translate');
   });
-  useKeyPress('two', () => {
+  useKeyPress('r', () => {
     setTransformMode('rotate');
   });
-  useKeyPress('three', () => {
+  useKeyPress('s', () => {
     setTransformMode('scale');
   });
+  useKeyPress('esc', () => {
+    setTransformMode(null);
+  });
+
+  useKeyPress('one', () => {
+    setCursorRotation((prev) => [
+      (prev[0] + Math.PI / 2) % (Math.PI * 2),
+      0,
+      0,
+    ]);
+  });
+  useKeyPress('two', () => {
+    setCursorRotation((prev) => [
+      0,
+      (prev[1] + Math.PI / 2) % (Math.PI * 2),
+      0,
+    ]);
+  });
+  useKeyPress('three', () => {
+    setCursorRotation((prev) => [
+      0,
+      0,
+      (prev[2] + Math.PI / 2) % (Math.PI * 2),
+    ]);
+  });
+  useEffect(() => {
+    const onRightClick = () => {
+      setShowCursor(false);
+    };
+    window.addEventListener('contextmenu', onRightClick);
+    return () => window.removeEventListener('contextmenu', onRightClick);
+  }, [setShowCursor]);
 
   return (
     <group>
@@ -185,471 +268,165 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
         side={DoubleSide}
       />
       {showCursor && (
-        <mesh
-          ref={cursorRef}
-          position={cursorSnappedPosition}
-          onClick={(e) => {
-            const base: TileBase = {
-              id: makeId(),
-              position: cursorSnappedPosition,
-              rotation: [0, 0, 0],
-              type: '',
-            };
-            if (createType === 'straight' || createType === 'quarter') {
-              addTile({
-                ...base,
-                type: createType,
-                showSides: 'all' as Side,
-                connections: [null, null],
-                entrances: [null, null],
-              });
-            } else if (createType === 't') {
-              addTile({
-                ...base,
-                type: createType,
-                showSides: 'all' as Side,
-                connections: [null, null, null],
-                entrances: [null, null, null],
-              });
-            } else if (createType === 'tark') {
-              addTile({
-                ...base,
-                type: createType,
-                actionType: 'toggle',
-              });
-            }
-            autoSnap();
-          }}
-        >
-          <boxGeometry args={[1, 1, 1]} />
-          <meshBasicMaterial color={'red'} wireframe />
-        </mesh>
+        <group position={cursorSnappedPosition} rotation={cursorRotation}>
+          <mesh
+            onClick={(e) => {
+              const base: TileBase = {
+                id: makeId(),
+                position: cursorSnappedPosition,
+                rotation: cursorRotation,
+                type: '',
+              };
+              if (createType === 'straight' || createType === 'quarter') {
+                addTile({
+                  ...base,
+                  type: createType,
+                  showSides: 'all' as Side,
+                  connections: [null, null],
+                  entrances: [null, null],
+                });
+              } else if (createType === 't') {
+                addTile({
+                  ...base,
+                  type: createType,
+                  showSides: 'all' as Side,
+                  connections: [null, null, null],
+                  entrances: [null, null, null],
+                });
+              } else if (createType === 'tark') {
+                addTile({
+                  ...base,
+                  type: createType,
+                  actionType: 'toggle',
+                });
+              }
+              autoSnap();
+            }}
+          >
+            <boxGeometry args={[1, 1, 1]} />
+            <meshBasicMaterial color={'red'} wireframe />
+          </mesh>
+          {createType === 'straight' ? (
+            <Straightaway tile={defaultStraightTile} opacity={0.25} />
+          ) : createType === 'quarter' ? (
+            <QuarterTurn tile={defaultQuarterTile} opacity={0.25} />
+          ) : createType === 't' ? (
+            <Junction tile={defaultJunctionTile} opacity={0.25} />
+          ) : createType === 'tark' ? (
+            <Toggle tile={defaultTarkTile} opacity={0.25} />
+          ) : null}
+        </group>
       )}
-      {selectedTileId !== null && (
-        <TransformControls
-          mode="translate"
-          translationSnap={0.5}
-          size={0.7}
-          ref={transform}
-          object={tileRefs.get(selectedTileId)!}
-          rotationSnap={Math.PI / 4}
-          onPointerOver={(e) => {
-            setOverTransform(true);
-          }}
-          onPointerLeave={(e) => {
-            setOverTransform(false);
-          }}
-          onChange={(e) => {
-            const target = tileRefs.get(selectedTileId)!;
-            if (target) {
-              updateTileAndRecompute(
-                selectedTileId,
-                transformMode === 'translate'
-                  ? {
-                      position: [
-                        target.position.x,
-                        target.position.y,
-                        target.position.z,
-                      ],
-                    }
-                  : transformMode === 'rotate'
+      {selectedTileId !== null &&
+        tileRefs.get(selectedTileId) &&
+        transformMode !== null && (
+          <TransformControls
+            mode={transformMode}
+            translationSnap={0.5}
+            size={0.7}
+            ref={transform}
+            object={tileRefs.get(selectedTileId!)}
+            rotationSnap={Math.PI / 4}
+            onPointerOver={(e) => {
+              setOverTransform(true);
+            }}
+            onPointerLeave={(e) => {
+              setOverTransform(false);
+            }}
+            onChange={(e) => {
+              const target = tileRefs.get(selectedTileId!);
+              if (target) {
+                updateTileAndRecompute(
+                  selectedTileId!,
+                  transformMode === 'translate'
                     ? {
-                        rotation: [
-                          target.rotation.x,
-
-                          target.rotation.y,
-                          target.rotation.z,
+                        position: [
+                          target.position.x,
+                          target.position.y,
+                          target.position.z,
                         ],
                       }
-                    : {},
-              );
-              autoSnap();
-            }
-          }}
-        ></TransformControls>
-      )}
+                    : transformMode === 'rotate'
+                      ? {
+                          rotation: [
+                            target.rotation.x,
+
+                            target.rotation.y,
+                            target.rotation.z,
+                          ],
+                        }
+                      : {},
+                );
+                autoSnap();
+              }
+            }}
+          />
+        )}
 
       {level &&
         level.tiles.map((tile) => {
           return (
-            <mesh
+            <group
               key={tile.id}
+              /* TransformControls are sensitive, any mouse event triggers a
+                change even if there is no change. When there is a hover, the
+                rotation is set to the target ref, which is this group, which is
+                the invisible hover object. So even though this group isn't
+                always visible, it stores the transform position and rotation.
+                Something better would be to read the rotation ref from the
+                tile itself. */
               position={tile.position}
-              onClick={(e) => {
-                // Don't check while dragging to avoid mouseup on
-                // transformcontrols causing a click to select a different tile
-                if (tile.id !== selectedTileId && !draggingTransform) {
-                  e.stopPropagation();
-                  setShowCursor(false);
-                  setSelectedTileId(tile.id);
-                }
-              }}
-              onPointerOver={(e) => {
-                if (
-                  tile.id !== hoverTileId &&
-                  !draggingTransform &&
-                  !overTransform &&
-                  !showCursor
-                ) {
-                  // e.stopPropagation();
-                  setHoverTileId(tile.id);
-                }
-              }}
-              onPointerOut={(e) => {
-                if (tile.id === hoverTileId) {
-                  // e.stopPropagation();
-                  setHoverTileId(null);
-                }
-              }}
+              rotation={tile.rotation}
               ref={setTileRefs(tile.id)}
             >
-              <Html className={cx('bg-slate-900', styles.idOverlay)}>
-                {tile.id}
-              </Html>
-              <boxGeometry args={[1, 1, 1]} />
-              <meshBasicMaterial
-                opacity={
-                  tile.id === selectedTileId
-                    ? 0.3
-                    : tile.id === hoverTileId
-                      ? 0.2
-                      : 0.01
-                }
-                transparent
-                color={'green'}
-              />
-            </mesh>
+              {targetTileIds?.includes(tile.id) && (
+                <mesh>
+                  <boxGeometry args={[1, 1, 1]} />
+                  <meshBasicMaterial color={'blue'} transparent opacity={0.5} />
+                </mesh>
+              )}
+              <mesh
+                onClick={(e) => {
+                  // Don't check while dragging to avoid mouseup on
+                  // transformcontrols causing a click to select a different tile
+                  if (tile.id !== selectedTileId && !draggingTransform) {
+                    e.stopPropagation();
+                    setShowCursor(false);
+                    setSelectedTileId(tile.id);
+                  }
+                }}
+                onPointerOver={(e) => {
+                  if (
+                    tile.id !== hoverTileId &&
+                    !draggingTransform &&
+                    !overTransform &&
+                    !showCursor
+                  ) {
+                    // e.stopPropagation();
+                    setHoverTileId(tile.id);
+                  }
+                }}
+                onPointerOut={(e) => {
+                  if (tile.id === hoverTileId) {
+                    // e.stopPropagation();
+                    setHoverTileId(null);
+                  }
+                }}
+              >
+                <boxGeometry args={[1, 1, 1]} />
+                <meshBasicMaterial
+                  visible={
+                    tile.id === selectedTileId || tile.id === hoverTileId
+                  }
+                  opacity={tile.id === selectedTileId ? 0.3 : 0.2}
+                  transparent
+                  color={'green'}
+                />
+              </mesh>
+            </group>
           );
         })}
     </group>
-  );
-};
-
-export const EditorUI = ({
-  children,
-  enabled,
-}: {
-  children: React.ReactNode;
-  enabled: boolean;
-}) => {
-  const currentLevelId = useGameStore((state) => state.currentLevelId);
-  const levels = useGameStore((state) => state.levels);
-  const hoverTileId = useGameStore((state) => state.hoverTileId);
-  const selectedTileId = useGameStore((state) => state.selectedTileId);
-  const createLevel = useGameStore((state) => state.createLevel);
-  const saveLevel = useGameStore((state) => state.saveLevel);
-  const updateCurrentLevel = useGameStore((state) => state.updateCurrentLevel);
-  const setCurrentLevelId = useGameStore((state) => state.setCurrentLevelId);
-
-  const level = levels.find((l) => l.id === currentLevelId);
-  const selectedTile = level?.tiles?.find((tile) => tile.id === selectedTileId);
-  const updateTileAndRecompute = useGameStore(
-    (state) => state.updateTileAndRecompute,
-  );
-  const createType = useGameStore((state) => state.createType);
-  const setCreateType = useGameStore((state) => state.setCreateType);
-  const showCursor = useGameStore((state) => state.showCursor);
-  const setShowCursor = useGameStore((state) => state.setShowCursor);
-
-  useKeyPress('j', () => {
-    setCreateType('t');
-  });
-  useKeyPress('s', () => {
-    setCreateType('straight');
-  });
-  useKeyPress('q', () => {
-    setCreateType('quarter');
-  });
-
-  return (
-    <div
-      className={cx('h-screen w-full', {
-        'cursor-pointer': hoverTileId !== null,
-      })}
-    >
-      {children}
-
-      <div
-        className={cx(
-          styles.bottomToolbar,
-          'bg-slate-900 text-sm flex gap-2 flex-row',
-        )}
-        style={{
-          display: enabled ? '' : 'none',
-        }}
-      >
-        <div className={cx(styles.toolbarItem, styles.keyboard, 'bg-gray-700')}>
-          <div className="key">g</div> <div>Rotate Grid</div>
-        </div>
-        {selectedTileId && (
-          <div
-            className={cx(styles.toolbarItem, styles.keyboard, 'bg-gray-700')}
-          >
-            <div className="key">123</div> <div>Transform mode</div>
-          </div>
-        )}
-        <div
-          className={cx(styles.toolbarButton, styles.keyboard, 'bg-gray-700', {
-            [styles.selected]: showCursor,
-          })}
-          onClick={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            setShowCursor(!showCursor);
-          }}
-        >
-          <div className="key">a</div> <div>Add</div>
-        </div>
-        {showCursor && [
-          <div
-            className={cx(
-              styles.toolbarButton,
-              styles.keyboard,
-              'bg-gray-700',
-              {
-                [styles.selected]: createType === 't',
-              },
-            )}
-            key="t"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setCreateType('t');
-            }}
-          >
-            <div className="key">j</div> <div>Junction</div>
-          </div>,
-          <div
-            className={cx(
-              styles.toolbarButton,
-              styles.keyboard,
-              'bg-gray-700',
-              {
-                [styles.selected]: createType === 'straight',
-              },
-            )}
-            key="str8"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setCreateType('straight');
-            }}
-          >
-            <div className="key">s</div> <div>Straight</div>
-          </div>,
-          <div
-            className={cx(
-              styles.toolbarButton,
-              styles.keyboard,
-              'bg-gray-700',
-              {
-                [styles.selected]: createType === 'quarter',
-              },
-            )}
-            key="q"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setCreateType('quarter');
-            }}
-          >
-            <div className="key">q</div> <div>Turn</div>
-          </div>,
-        ]}
-      </div>
-
-      {/* Sidebar */}
-      <div
-        className={cx(styles.sidebar, 'bg-slate-900')}
-        style={{
-          display: enabled ? '' : 'none',
-        }}
-      >
-        <div className="mb-3">
-          <label className="mb-1 block">Select Level</label>
-          <div className="grid grid-cols-[1fr_max-content] grid-cols-2 gap-2">
-            <div>
-              <select
-                className={cx(styles.input, 'mb-2 w-full')}
-                value={currentLevelId!}
-                onChange={(e) => {
-                  setCurrentLevelId(e.target.value);
-                }}
-              >
-                {levels.map((level) => {
-                  return (
-                    <option key={level.id} value={level.id}>
-                      {level.name}
-                    </option>
-                  );
-                })}
-              </select>
-            </div>
-            <div>
-              <div
-                className={cx(styles.toolbarButton, 'block bg-gray-700', {
-                  [styles.selected]: showCursor,
-                })}
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  createLevel({
-                    name: 'New Level',
-                    description: 'New Level',
-                    tiles: [],
-                    startingTileId: '',
-                  });
-                }}
-              >
-                New Level
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className="mb-3">
-          <label className="mb-1 block">Level Name</label>
-          <div className="grid grid-cols-[1fr_max-content] grid-cols-2 gap-2">
-            <div>
-              <input
-                className={cx(styles.input, 'mb-2 w-full')}
-                value={level?.name}
-                onChange={(e) => {
-                  updateCurrentLevel({
-                    name: e.target.value,
-                  });
-                }}
-              />
-            </div>
-            <div>
-              <button
-                className={cx(styles.toolbarButton, 'block bg-gray-700')}
-                disabled={!level}
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  await saveLevel(level!);
-                }}
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {selectedTile && selectedTileId && (
-          <div>
-            <label className="mb-3 block">Selected Tile</label>
-            <div className="mb-3">
-              <label className="text-slate-400">Id</label> {selectedTile.id}
-            </div>
-            <div className="mb-3">
-              <label className="text-slate-400">Type</label> {selectedTile.type}
-            </div>
-            {'connections' in selectedTile && (
-              <div>
-                <div className="mb-3">
-                  <label className="mb-1 block text-slate-400" htmlFor="st">
-                    Starting Tile?
-                  </label>
-                  <input
-                    id="st"
-                    type="checkbox"
-                    checked={level?.startingTileId === selectedTile.id}
-                    onChange={(e) => {
-                      if (level?.startingTileId !== selectedTile.id) {
-                        updateCurrentLevel({
-                          startingTileId: selectedTile.id,
-                        });
-                      }
-                    }}
-                  />
-                </div>
-                <div className="mb-3">
-                  <label className="mb-1 block text-slate-400">Sides</label>
-                  <select
-                    className={cx(styles.input, 'mb-2 w-full')}
-                    value={selectedTile.showSides}
-                    onChange={(e) => {
-                      updateTileAndRecompute(selectedTileId, {
-                        showSides: e.target.value as Side,
-                      });
-                    }}
-                  >
-                    <option value="all">All</option>
-                    <option value="top">Top</option>
-                    <option value="bottom">Bottom</option>
-                    <option value="left">Left</option>
-                    <option value="right">Right</option>
-                    <option value="front">Front</option>
-                    <option value="back">Back</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="mb-2 block text-slate-300">
-                    Connections
-                  </label>
-                  <div
-                    className={cx(`grid gap-2`, {
-                      'grid-cols-2': selectedTile.connections.length === 2,
-                      'grid-cols-3': selectedTile.connections.length === 3,
-                    })}
-                  >
-                    {selectedTile.connections.map((connection, i) => {
-                      return (
-                        <div key={i}>
-                          <label className="mb-1 block text-xs ">
-                            Connection {i}
-                          </label>
-                          <input
-                            className={cx(styles.input, 'mb-2 w-full')}
-                            value={connection!}
-                            onChange={(e) => {
-                              updateTileAndRecompute(selectedTileId, {
-                                connections: selectedTile.connections.map(
-                                  (c, j) => (i === j ? e.target.value : c),
-                                ) as StrTrip,
-                              });
-                            }}
-                            type="text"
-                          />
-                          <label className="mb-1 block text-xs">
-                            Other Entrance
-                          </label>
-                          <select
-                            className={cx(styles.input, 'mb-2 w-full')}
-                            value={selectedTile.entrances[i]!}
-                            onChange={(e) => {
-                              updateTileAndRecompute(selectedTileId, {
-                                entrances: selectedTile.entrances.map((c, j) =>
-                                  i === j ? parseInt(e.target.value) : c,
-                                ) as NumTrip,
-                              });
-                            }}
-                          >
-                            {level?.tiles
-                              ?.find(
-                                (tile): tile is RailTile =>
-                                  tile.id === connection,
-                              )
-                              ?.entrances.map((_, i) => {
-                                return (
-                                  <option key={i} value={i}>
-                                    {i}
-                                  </option>
-                                );
-                              })}
-                          </select>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
   );
 };
 

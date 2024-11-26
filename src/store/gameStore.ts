@@ -20,11 +20,20 @@ export type TileComputed = {
   exits: Vector3[];
 };
 
+export type ActionTargetType = 'rotation';
+export type ActionAxis = 'x' | 'y' | 'z';
 export type Action = {
   type: 'rotation';
   degrees: number;
   targetTiles: string[];
-  axis: 'x' | 'y' | 'z';
+  axis: ActionAxis;
+};
+
+export const defaultAction = {
+  type: 'rotation' as ActionTargetType,
+  degrees: 90,
+  targetTiles: [],
+  axis: 'y' as ActionAxis,
 };
 
 export type TileBase = {
@@ -34,11 +43,12 @@ export type TileBase = {
   type: string;
 };
 
+export type ActionType = 'toggle' | 'click' | 'timed' | 'hold';
 export type TarkTile = TileBase & {
   position: [number, number, number];
   rotation: [number, number, number];
   type: 'tark';
-  actionType: 'toggle' | 'click' | 'timed' | 'hold';
+  actionType: ActionType;
   action?: Action;
 };
 
@@ -64,7 +74,8 @@ export const isRailTile = (tile: Tile): tile is RailTile =>
   tile.type === 'straight' || tile.type === 'quarter';
 
 let idx = 20;
-export const makeId = () => (idx++).toString();
+export const makeId = () =>
+  (idx++).toString() + '_' + Date.now().toString().substring(10);
 
 export type JunctionTile = TileBase & {
   type: 't';
@@ -284,6 +295,7 @@ export interface GameStore {
   setIsEditing: (isEditing: boolean) => void;
   addTile: (tile: Tile) => void;
   deleteTile: (tileId: string) => void;
+  updateTileAction: (tileId: string, action: Partial<Action>) => void;
   updateTileAndRecompute: <T extends Tile>(
     tileId: string,
     tile: Partial<T>,
@@ -407,6 +419,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
       tiles: level.tiles.filter((tile) => tile.id !== tileId),
     });
   },
+  updateTileAction: (tileId, action) => {
+    const s = get();
+    const level = s.levels.find((l) => l.id === s.currentLevelId)!;
+    const t = level.tiles.find((tile) => tile.id === tileId) as TarkTile;
+    const updated: TarkTile = {
+      ...t,
+      action: { ...(t.action || defaultAction), ...action },
+    };
+    const tiles = level.tiles.map((tile) =>
+      tileId === tile.id ? updated : tile,
+    );
+    s.updateCurrentLevel({ tiles });
+  },
   updateTileAndRecompute: <T extends Tile>(
     tileId: string,
     update: Partial<T>,
@@ -443,7 +468,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
   gameStarted: false,
   setGameStarted: (gameStarted) => set({ gameStarted }),
   currentLevelId: null,
-  setCurrentLevelId: (currentLevelId) => set({ currentLevelId }),
+  setCurrentLevelId: (currentLevelId) => {
+    set({ currentLevelId });
+    get().resetLevel();
+    get().autoSnap();
+  },
   curveProgress: 0,
   setCurveProgress: (progress) => set({ curveProgress: progress }),
   currentTile: null,
@@ -623,16 +652,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
         {},
       );
 
+      const currentTile = level.tiles.find(
+        (t) => t.id === level.startingTileId,
+      ) as TrackTile;
+      console.log('Game reset! Starting on', { currentTile });
       return {
         level,
         curveProgress: 0,
+        currentCurveIndex: 0,
         enteredFrom: -1,
-        nextConnection: -1,
+        // TODO: Need a starting connection too!
+        nextConnection: 0,
         playerMomentum: 0,
         tilesComputed,
-        currentTile: level.tiles.find(
-          (t) => t.id === level.startingTileId,
-        ) as TrackTile,
+        transforms: {},
+        currentTile,
       };
     }),
 }));
