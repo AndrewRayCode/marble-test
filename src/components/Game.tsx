@@ -196,7 +196,13 @@ const Game = () => {
 
     const progress = clamp(
       s.curveProgress +
-        s.playerMomentum * delta * (currentTile.type === 't' ? 2.0 : 1.0),
+        s.playerMomentum *
+          delta *
+          (currentTile.type === 'cap'
+            ? 4.0
+            : currentTile.type === 't'
+              ? 2.0
+              : 1.0),
       0,
       1,
     );
@@ -292,7 +298,19 @@ const Game = () => {
       // We are the end of this curve in our direction of travel
       if ((progress >= 1.0 && isPositive) || (progress <= 0 && !isPositive)) {
         // We have landed on the junction in the middle of the T
-        if (currentTile.type == 't') {
+        if (currentTile.type === 'cap') {
+          // We are leaving
+          if (s.nextConnection === 0) {
+            nextId = currentTile.connections[0];
+            nextEntrance = currentTile.entrances[0];
+            // We hit the center of the cap
+          } else if (key().down) {
+            setEnteredFrom(-1);
+            setNextConnection(0);
+            setMomentum(-PLAYER_SPEED);
+            setCurveProgress(1.0);
+          }
+        } else if (currentTile.type == 't') {
           // We are going towards, and have landed on, the center
           if (s.nextConnection === -1) {
             const isDown = key().down && directions.down;
