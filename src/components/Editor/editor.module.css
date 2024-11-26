@@ -2,7 +2,7 @@
  * Containers
  */
 .sidebar {
-  max-width: 20%;
+  width: 20%;
   height: 100%;
   padding: 10px;
   position: absolute;
@@ -58,16 +58,16 @@
 
 .toolbarItem,
 .toolbarButton {
-  display: grid;
-  grid-template-columns: min-content 1fr;
   padding: 0.5rem 1rem;
   border-radius: 0.375rem;
   align-items: center;
 }
-.toolbarButton {
+.toolbarButton:not(:disabled) {
   cursor: pointer;
 }
 .keyboard {
+  display: grid;
+  grid-template-columns: min-content 1fr;
   gap: 0.5rem;
   padding: 0.25rem 0.6rem 0.25rem 0.25rem !important;
 }
@@ -75,7 +75,7 @@
 .toolbarButton.selected {
   background: rgb(63, 131, 248);
 }
-.toolbarButton:hover {
+.toolbarButton:not(:disabled):hover {
   background: rgb(63, 131, 248);
 }
 

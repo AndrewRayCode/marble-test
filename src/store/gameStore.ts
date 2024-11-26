@@ -3,8 +3,9 @@ import { calculateExitBuddies, deg2Rad, TileExit } from '@/util/math';
 import { post } from '@/util/network';
 import { Level as DbLevel } from '@prisma/client';
 import { useKeyboardControls } from '@react-three/drei';
-import { useEffect } from 'react';
+import { use, useEffect } from 'react';
 import { CubicBezierCurve3, Vector3 } from 'three';
+import { deserialize, serialize } from 'v8';
 import { create } from 'zustand';
 
 export type Side = 'left' | 'right' | 'front' | 'back';
@@ -266,8 +267,10 @@ export interface GameStore {
   toggleDebug: () => void;
 
   levels: Level[];
+  setLevelsFromDb: (levels: DbLevel[]) => void;
   createLevel: (level: Omit<Level, 'id'>) => Promise<void>;
   updateCurrentLevel: (level: Partial<Level>) => void;
+  saveLevel: (level: Level) => Promise<void>;
 
   buddies: TileExit[][];
   setBuddies: (buddies: TileExit[][]) => void;
@@ -290,6 +293,8 @@ export interface GameStore {
   setShowCursor: (showCursor: boolean) => void;
   createType: Tile['type'];
   setCreateType: (createType: Tile['type']) => void;
+  isInputFocused: boolean;
+  setIsInputFocused: (isInputFocused: boolean) => void;
 
   // Game state
   gameStarted: boolean;
@@ -347,26 +352,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
   toggleDebug: () => set((state) => ({ debug: !state.debug })),
 
   levels: [],
+  setLevelsFromDb: (dbLevels) =>
+    set((s) => {
+      return { levels: dbLevels.map((level) => deserializeLevel(level)) };
+    }),
   createLevel: async (newLevel) => {
     const s = get();
     const { level } = await post('/api/levels/create', {
-      level: {
-        name: newLevel.name,
-        description: newLevel.description,
-        data: {
-          tiles: newLevel.tiles,
-          startingTileId: newLevel.startingTileId,
-        },
-      },
+      level: serializeLevel(newLevel),
     });
-    const deserialized: Level = {
-      id: level.id,
-      name: level.name,
-      description: level.description,
-      tiles: level.data.tiles,
-      startingTileId: level.data.startingTileId,
-    };
-    set({ levels: [...s.levels, deserialized] });
+    set({ levels: [...s.levels, deserializeLevel(level)] });
     s.setCurrentLevelId(level.id);
     s.resetLevel();
   },
@@ -379,6 +374,11 @@ export const useGameStore = create<GameStore>((set, get) => ({
         ),
       };
     }),
+  saveLevel: async (level) => {
+    await post(`/api/levels/${level.id}/upsert`, {
+      level: serializeLevel(level),
+    });
+  },
 
   buddies: [],
   setBuddies: (buddies) => set({ buddies }),
@@ -437,6 +437,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setShowCursor: (showCursor) => set({ showCursor }),
   createType: 'straight',
   setCreateType: (createType) => set({ createType }),
+  isInputFocused: false,
+  setIsInputFocused: (isInputFocused) => set({ isInputFocused }),
 
   gameStarted: false,
   setGameStarted: (gameStarted) => set({ gameStarted }),
@@ -637,14 +639,41 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
 export const useKeyPress = (key: string, action: () => void) => {
   const [sub] = useKeyboardControls();
+  const isInputFocused = useGameStore((s) => s.isInputFocused);
+
   useEffect(() => {
     return sub(
       (state) => state[key],
       (pressed) => {
-        if (pressed) {
+        if (pressed && !isInputFocused) {
           action();
         }
       },
     );
-  }, [sub, action, key]);
+  }, [sub, action, key, isInputFocused]);
+};
+
+export const serializeLevel = (level: Level) => {
+  return {
+    name: level.name,
+    description: level.description,
+    data: {
+      tiles: level.tiles,
+      startingTileId: level.startingTileId,
+    },
+  };
+};
+
+export const deserializeLevel = (level: DbLevel): Level => {
+  const data = level.data as {
+    tiles: Tile[];
+    startingTileId: string;
+  };
+  return {
+    id: level.id,
+    name: level.name,
+    description: level.description,
+    tiles: data.tiles,
+    startingTileId: data.startingTileId,
+  };
 };

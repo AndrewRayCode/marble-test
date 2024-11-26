@@ -109,25 +109,26 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
   useKeyPress('gridRotate', () => {
     setGridPosition((prev) => {
       if (selectedTile) {
-        // Rotate around y, go left
         if (gridRotation === 1) {
           return [
+            // Rotate around y, go left
             selectedTile.position[0] - 0.5,
-            selectedTile.position[1],
-            selectedTile.position[2],
+            // Move grid so squares line up with where tiles place
+            selectedTile.position[1] - 0.5,
+            selectedTile.position[2] - 0.5,
           ];
           // No rotation, go down
         } else if (gridRotation === 2) {
           return [
-            selectedTile.position[0],
+            selectedTile.position[0] - 0.5,
             selectedTile.position[1] - 0.5,
-            selectedTile.position[2],
+            selectedTile.position[2] - 0.5,
           ];
         }
         // Rotating around x axis, go back
         return [
-          selectedTile.position[0],
-          selectedTile.position[1],
+          selectedTile.position[0] - 0.5,
+          selectedTile.position[1] - 0.5,
           selectedTile.position[2] - 0.5,
         ];
       }
@@ -336,7 +337,9 @@ export const EditorUI = ({
   const hoverTileId = useGameStore((state) => state.hoverTileId);
   const selectedTileId = useGameStore((state) => state.selectedTileId);
   const createLevel = useGameStore((state) => state.createLevel);
+  const saveLevel = useGameStore((state) => state.saveLevel);
   const updateCurrentLevel = useGameStore((state) => state.updateCurrentLevel);
+  const setCurrentLevelId = useGameStore((state) => state.setCurrentLevelId);
 
   const level = levels.find((l) => l.id === currentLevelId);
   const selectedTile = level?.tiles?.find((tile) => tile.id === selectedTileId);
@@ -365,37 +368,6 @@ export const EditorUI = ({
       })}
     >
       {children}
-
-      <div
-        className={cx(
-          styles.topToolbar,
-          'bg-slate-900 text-sm flex gap-2 flex-row',
-        )}
-        style={{
-          display: enabled ? '' : 'none',
-        }}
-      >
-        <div
-          className={cx(styles.toolbarButton, 'bg-gray-700', {
-            [styles.selected]: showCursor,
-          })}
-          onClick={async (e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            createLevel({
-              name: 'New Level',
-              description: 'New Level',
-              tiles: [],
-              startingTileId: '',
-            });
-          }}
-        >
-          New Level
-        </div>
-        <div>
-          {level?.id ? <div>Level ID: {level?.id}</div> : <div>New level</div>}
-        </div>
-      </div>
 
       <div
         className={cx(
@@ -487,122 +459,196 @@ export const EditorUI = ({
       </div>
 
       {/* Sidebar */}
-      {selectedTile && selectedTileId && (
-        <div
-          className={cx(styles.sidebar, 'bg-slate-900')}
-          style={{
-            display: enabled ? '' : 'none',
-          }}
-        >
-          <div className="mb-3">Id: {selectedTile.id}</div>
-          <div className="mb-3">Type: {selectedTile.type}</div>
-          {'connections' in selectedTile && (
+      <div
+        className={cx(styles.sidebar, 'bg-slate-900')}
+        style={{
+          display: enabled ? '' : 'none',
+        }}
+      >
+        <div className="mb-3">
+          <label className="mb-1 block">Select Level</label>
+          <div className="grid grid-cols-[1fr_max-content] grid-cols-2 gap-2">
             <div>
-              <div className="mb-3">
-                Connections: {selectedTile.connections.join(', ')}
-              </div>
-              <div className="mb-3">
-                Entrances: {selectedTile.entrances.join(', ')}
-              </div>
-              <div className="mb-3">
-                <label className="mb-1 block" htmlFor="st">
-                  Starting Tile?
-                </label>
-                <input
-                  id="st"
-                  type="checkbox"
-                  checked={level?.startingTileId === selectedTile.id}
-                  onChange={(e) => {
-                    if (level?.startingTileId !== selectedTile.id) {
-                      updateCurrentLevel({
-                        startingTileId: selectedTile.id,
-                      });
-                    }
-                  }}
-                />
-              </div>
-              <div className="mb-3">
-                <label className="mb-1 block">Sides</label>
-                <select
-                  className={cx(styles.input, 'mb-2 w-full')}
-                  value={selectedTile.showSides}
-                  onChange={(e) => {
-                    updateTileAndRecompute(selectedTileId, {
-                      showSides: e.target.value as Side,
-                    });
-                  }}
-                >
-                  <option value="all">All</option>
-                  <option value="top">Top</option>
-                  <option value="bottom">Bottom</option>
-                  <option value="left">Left</option>
-                  <option value="right">Right</option>
-                  <option value="front">Front</option>
-                  <option value="back">Back</option>
-                </select>
-              </div>
-              <div>
-                <label className="mb-2 block">Connections</label>
-                <div
-                  className={cx(`grid gap-2`, {
-                    'grid-cols-2': selectedTile.connections.length === 2,
-                    'grid-cols-3': selectedTile.connections.length === 3,
-                  })}
-                >
-                  {selectedTile.connections.map((connection, i) => {
-                    return (
-                      <div key={i}>
-                        <label className="mb-1 block text-xs ">
-                          Connection {i}
-                        </label>
-                        <input
-                          className={cx(styles.input, 'mb-2 w-full')}
-                          value={connection!}
-                          onChange={(e) => {
-                            updateTileAndRecompute(selectedTileId, {
-                              connections: selectedTile.connections.map(
-                                (c, j) => (i === j ? e.target.value : c),
-                              ) as StrTrip,
-                            });
-                          }}
-                          type="text"
-                        />
-                        <label className="mb-1 block text-xs">
-                          Other Entrance
-                        </label>
-                        <select
-                          className={cx(styles.input, 'mb-2 w-full')}
-                          value={selectedTile.entrances[i]!}
-                          onChange={(e) => {
-                            updateTileAndRecompute(selectedTileId, {
-                              entrances: selectedTile.entrances.map((c, j) =>
-                                i === j ? parseInt(e.target.value) : c,
-                              ) as NumTrip,
-                            });
-                          }}
-                        >
-                          {level?.tiles
-                            ?.find(
-                              (tile): tile is RailTile =>
-                                tile.id === connection,
-                            )
-                            ?.entrances.map((_, i) => {
-                              return (
-                                <option key={i} value={i}>
-                                  {i}
-                                </option>
-                              );
-                            })}
-                        </select>
-                      </div>
-                    );
-                  })}
-                </div>
+              <select
+                className={cx(styles.input, 'mb-2 w-full')}
+                value={currentLevelId!}
+                onChange={(e) => {
+                  setCurrentLevelId(e.target.value);
+                }}
+              >
+                {levels.map((level) => {
+                  return (
+                    <option key={level.id} value={level.id}>
+                      {level.name}
+                    </option>
+                  );
+                })}
+              </select>
+            </div>
+            <div>
+              <div
+                className={cx(styles.toolbarButton, 'block bg-gray-700', {
+                  [styles.selected]: showCursor,
+                })}
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  createLevel({
+                    name: 'New Level',
+                    description: 'New Level',
+                    tiles: [],
+                    startingTileId: '',
+                  });
+                }}
+              >
+                New Level
               </div>
             </div>
-          )}
+          </div>
         </div>
-      )}
+        <div className="mb-3">
+          <label className="mb-1 block">Level Name</label>
+          <div className="grid grid-cols-[1fr_max-content] grid-cols-2 gap-2">
+            <div>
+              <input
+                className={cx(styles.input, 'mb-2 w-full')}
+                value={level?.name}
+                onChange={(e) => {
+                  updateCurrentLevel({
+                    name: e.target.value,
+                  });
+                }}
+              />
+            </div>
+            <div>
+              <button
+                className={cx(styles.toolbarButton, 'block bg-gray-700')}
+                disabled={!level}
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  await saveLevel(level!);
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {selectedTile && selectedTileId && (
+          <div>
+            <label className="mb-3 block">Selected Tile</label>
+            <div className="mb-3">
+              <label className="text-slate-400">Id</label> {selectedTile.id}
+            </div>
+            <div className="mb-3">
+              <label className="text-slate-400">Type</label> {selectedTile.type}
+            </div>
+            {'connections' in selectedTile && (
+              <div>
+                <div className="mb-3">
+                  <label className="mb-1 block text-slate-400" htmlFor="st">
+                    Starting Tile?
+                  </label>
+                  <input
+                    id="st"
+                    type="checkbox"
+                    checked={level?.startingTileId === selectedTile.id}
+                    onChange={(e) => {
+                      if (level?.startingTileId !== selectedTile.id) {
+                        updateCurrentLevel({
+                          startingTileId: selectedTile.id,
+                        });
+                      }
+                    }}
+                  />
+                </div>
+                <div className="mb-3">
+                  <label className="mb-1 block text-slate-400">Sides</label>
+                  <select
+                    className={cx(styles.input, 'mb-2 w-full')}
+                    value={selectedTile.showSides}
+                    onChange={(e) => {
+                      updateTileAndRecompute(selectedTileId, {
+                        showSides: e.target.value as Side,
+                      });
+                    }}
+                  >
+                    <option value="all">All</option>
+                    <option value="top">Top</option>
+                    <option value="bottom">Bottom</option>
+                    <option value="left">Left</option>
+                    <option value="right">Right</option>
+                    <option value="front">Front</option>
+                    <option value="back">Back</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-2 block text-slate-300">
+                    Connections
+                  </label>
+                  <div
+                    className={cx(`grid gap-2`, {
+                      'grid-cols-2': selectedTile.connections.length === 2,
+                      'grid-cols-3': selectedTile.connections.length === 3,
+                    })}
+                  >
+                    {selectedTile.connections.map((connection, i) => {
+                      return (
+                        <div key={i}>
+                          <label className="mb-1 block text-xs ">
+                            Connection {i}
+                          </label>
+                          <input
+                            className={cx(styles.input, 'mb-2 w-full')}
+                            value={connection!}
+                            onChange={(e) => {
+                              updateTileAndRecompute(selectedTileId, {
+                                connections: selectedTile.connections.map(
+                                  (c, j) => (i === j ? e.target.value : c),
+                                ) as StrTrip,
+                              });
+                            }}
+                            type="text"
+                          />
+                          <label className="mb-1 block text-xs">
+                            Other Entrance
+                          </label>
+                          <select
+                            className={cx(styles.input, 'mb-2 w-full')}
+                            value={selectedTile.entrances[i]!}
+                            onChange={(e) => {
+                              updateTileAndRecompute(selectedTileId, {
+                                entrances: selectedTile.entrances.map((c, j) =>
+                                  i === j ? parseInt(e.target.value) : c,
+                                ) as NumTrip,
+                              });
+                            }}
+                          >
+                            {level?.tiles
+                              ?.find(
+                                (tile): tile is RailTile =>
+                                  tile.id === connection,
+                              )
+                              ?.entrances.map((_, i) => {
+                                return (
+                                  <option key={i} value={i}>
+                                    {i}
+                                  </option>
+                                );
+                              })}
+                          </select>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 };

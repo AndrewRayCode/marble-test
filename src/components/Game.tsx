@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import useSound from 'use-sound';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { Mesh, Vector2, Vector3 } from 'three';
@@ -21,6 +21,7 @@ import {
   ScreenArrow,
   ScreenArrows,
   TarkTile,
+  Tile,
   TrackTile,
   useGameStore,
   useKeyPress,
@@ -37,6 +38,7 @@ import Straightaway from './Tiles/Straightaway';
 import QuarterTurn from './Tiles/QuarterTurn';
 import Junction from './Tiles/Junction';
 import { Level } from '@prisma/client';
+import { JsonObject } from '@prisma/client/runtime/library';
 
 const lowest = (a: {
   left: number;
@@ -66,7 +68,7 @@ type GameProps = {
   dbLevels: Level[];
 };
 
-const Game = ({ dbLevels }: GameProps) => {
+const Game = () => {
   const [, key] = useKeyboardControls();
 
   const buddies = useGameStore((state) => state.buddies);
@@ -539,11 +541,47 @@ const Game = ({ dbLevels }: GameProps) => {
   );
 };
 
-export default function ThreeScene(props: GameProps) {
+export default function ThreeScene({ dbLevels }: GameProps) {
   const playerMomentum = useGameStore((state) => state.playerMomentum);
   // const curveProgress = useStore((state) => state.curveProgress);
   const isEditing = useGameStore((state) => state.isEditing);
   const debug = useGameStore((state) => state.debug);
+  const levels = useGameStore((state) => state.levels);
+  const currentLevelId = useGameStore((state) => state.currentLevelId);
+  const setaCurrentLevelId = useGameStore((state) => state.setCurrentLevelId);
+  const setLevelsFromDb = useGameStore((state) => state.setLevelsFromDb);
+  const setInputFocused = useGameStore((state) => state.setIsInputFocused);
+
+  const [fetched, setHasFetched] = useState(false);
+
+  // This is an anti-pattern. Replace with server action?
+  useEffect(() => {
+    if (!fetched) {
+      setHasFetched(true);
+      setLevelsFromDb(dbLevels);
+      if (dbLevels.length > 0) {
+        setaCurrentLevelId(dbLevels[0].id);
+      }
+    }
+  }, [
+    currentLevelId,
+    levels,
+    dbLevels,
+    setLevelsFromDb,
+    setaCurrentLevelId,
+    fetched,
+  ]);
+
+  useEffect(() => {
+    const focus = () => setInputFocused(true);
+    const blur = () => setInputFocused(false);
+    document.body.addEventListener('focusin', focus);
+    document.body.addEventListener('focusout', blur);
+    return () => {
+      document.body.removeEventListener('focusin', focus);
+      document.body.removeEventListener('focusout', blur);
+    };
+  }, [setInputFocused]);
 
   return (
     <div className={cx('h-screen w-full bg-gray-900')}>
@@ -570,7 +608,7 @@ export default function ThreeScene(props: GameProps) {
       >
         <EditorUI enabled={isEditing}>
           <Canvas camera={{ position: [0, 0, 6] }} className="h-full w-full">
-            <Game {...props} />
+            <Game />
           </Canvas>
           {debug && (
             <div className="absolute bottom-0 right-0 h-16 w-64 z-2 bg-slate-900 shadow-lg rounded-lg p-2 text-sm">
