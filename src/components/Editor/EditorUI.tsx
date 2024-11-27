@@ -158,6 +158,32 @@ export const EditorUI = ({
           >
             <div className="key">b</div> <div>Button</div>
           </div>,
+          <div
+            className={cx(styles.toolbarButton, 'bg-gray-700', {
+              [styles.selected]: createType === 'box',
+            })}
+            key="btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setCreateType('box');
+            }}
+          >
+            <div>Box</div>
+          </div>,
+          <div
+            className={cx(styles.toolbarButton, 'bg-gray-700', {
+              [styles.selected]: createType === 'coin',
+            })}
+            key="btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setCreateType('coin');
+            }}
+          >
+            <div>Coin</div>
+          </div>,
         ]}
       </div>
 
@@ -240,7 +266,12 @@ export const EditorUI = ({
         </div>
 
         {selectedTile && selectedTileId && (
-          <TileEditor selectedTileId={selectedTileId} />
+          <div>
+            <label className="mb-3 block">
+              Selected Tile ({selectedTile.type})
+            </label>
+            <TileEditor selectedTileId={selectedTileId} />
+          </div>
         )}
       </div>
     </div>

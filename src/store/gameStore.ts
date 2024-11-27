@@ -77,6 +77,15 @@ export type CapTile = TileBase & {
   entrances: [NullNum];
 };
 
+export type BoxTile = TileBase & {
+  type: 'box';
+  color: string;
+};
+
+export type CoinTile = TileBase & {
+  type: 'coin';
+};
+
 export const isRailTile = (tile: Tile): tile is RailTile =>
   tile.type === 'straight' || tile.type === 'quarter' || tile.type === 'cap';
 
@@ -96,7 +105,7 @@ export const isJunctionTile = (tile: Tile): tile is JunctionTile =>
 // Only tiles the player can roll / travel on
 export type TrackTile = RailTile | JunctionTile | CapTile;
 // All valid level tiles
-export type Tile = TrackTile | ButtonTile;
+export type Tile = TrackTile | ButtonTile | BoxTile | CoinTile;
 
 export type Level = Omit<DbLevel, 'id' | 'data'> & {
   id?: string;
@@ -196,6 +205,9 @@ export interface GameStore {
   setArrowPositions: (positions: Vector3[]) => void;
   screenArrows: ScreenArrows;
   setScreenArrows: (arrows: ScreenArrows) => void;
+
+  collectedItems: Set<string>;
+  collectItem: (id: string) => void;
 
   resetLevel: () => void;
 }
@@ -476,11 +488,20 @@ export const useGameStore = create<GameStore>((set, get) => ({
   screenArrows: [],
   setScreenArrows: (screenArrows) => set({ screenArrows }),
 
+  collectedItems: new Set(),
+  collectItem: (id) =>
+    set((state) => {
+      state.collectedItems.add(id);
+      return { collectedItems: state.collectedItems };
+    }),
+
   resetLevel: () =>
     set((state) => {
       if (!state.currentLevelId) {
         return {};
       }
+      set({ transforms: {} });
+
       const level = state.levels.find((l) => l.id === state.currentLevelId)!;
       const tilesComputed = level.tiles.reduce<Record<string, TileComputed>>(
         (acc, tile) =>
@@ -505,8 +526,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         // TODO: Need a starting connection too!
         nextConnection: 0,
         playerMomentum: 0,
+        collectedItems: new Set(),
         tilesComputed,
-        transforms: {},
         currentTile,
       };
     }),

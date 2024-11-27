@@ -15,7 +15,11 @@ import {
 } from '@react-three/drei';
 import { useFrame } from '@react-three/fiber';
 
-import { PLAYER_SPEED, SPHERE_RADIUS } from '@/game/constants';
+import {
+  INITIAL_SPHERE_RADIUS,
+  PLAYER_SPEED,
+  SPHERE_RADIUS,
+} from '@/game/constants';
 import {
   isRailTile,
   ScreenArrow,
@@ -30,6 +34,8 @@ import OnScreenArrows from './OnScreenArrows';
 import EditorComponent from './Editor/Editor';
 
 import buttonSfx from '@/public/button.mp3';
+import coinSfx from '@/public/coin.mp3';
+import moneySfx from '@/public/money.mp3';
 
 import cx from 'classnames';
 import Toggle from './Tiles/Toggle';
@@ -39,6 +45,8 @@ import Junction from './Tiles/Junction';
 import { Level } from '@prisma/client';
 import EditorUI from './Editor/EditorUI';
 import Cap from './Tiles/Cap';
+import Box from './Tiles/Box';
+import Coin from './Tiles/Coin';
 
 const lowest = (a: {
   left: number;
@@ -93,6 +101,7 @@ const Game = () => {
   const isEditing = useGameStore((state) => state.isEditing);
   const setIsEditing = useGameStore((state) => state.setIsEditing);
   const tilesComputed = useGameStore((state) => state.tilesComputed);
+  const collectedItems = useGameStore((state) => state.collectedItems);
 
   const marbleRef = useRef<Mesh>(null);
   const orbit = useRef<OrbitControlsImpl>(null);
@@ -123,6 +132,8 @@ const Game = () => {
   });
 
   const [playBtnSfx] = useSound(buttonSfx, { volume: 0.5 });
+  const [playCoinSfx] = useSound(coinSfx, { volume: 0.15 });
+  const [playMoneySfx] = useSound(moneySfx, { volume: 1 });
 
   // Start game :(
   useEffect(() => {
@@ -223,6 +234,19 @@ const Game = () => {
 
       // Update the sphere's position
       marbleRef.current.position.copy(point);
+
+      level.tiles
+        .filter((t) => t.type === 'coin' && !s.collectedItems.has(t.id))
+        .forEach((coin) => {
+          const isNear =
+            point.distanceTo(new Vector3(...coin.position)) <
+            INITIAL_SPHERE_RADIUS;
+          if (isNear) {
+            playCoinSfx();
+            playMoneySfx();
+            s.collectItem(coin.id);
+          }
+        });
 
       // Check for switch presses
       level.tiles
@@ -417,7 +441,7 @@ const Game = () => {
       <Environment
         files="/envmaps/room.hdr"
         background
-        backgroundBlurriness={0.5}
+        backgroundBlurriness={0.3}
       />
 
       {/* Player */}
@@ -474,6 +498,16 @@ const Game = () => {
             return <Toggle key={tile.id} tile={tile} />;
           } else if (tile.type === 'cap') {
             return <Cap key={tile.id} tile={tile} />;
+          } else if (tile.type === 'box') {
+            return <Box key={tile.id} tile={tile} />;
+          } else if (tile.type === 'coin') {
+            return (
+              <Coin
+                key={tile.id}
+                tile={tile}
+                visible={!collectedItems.has(tile.id)}
+              />
+            );
           }
         })}
 

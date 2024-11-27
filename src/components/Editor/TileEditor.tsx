@@ -94,7 +94,6 @@ export const TileEditor = ({ selectedTileId }: { selectedTileId: string }) => {
 
   return (
     <div>
-      <label className="mb-3 block">Selected Tile</label>
       <div className="mb-3">
         <label className="text-slate-400">Id</label> {selectedTile.id}
       </div>

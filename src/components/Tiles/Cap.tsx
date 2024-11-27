@@ -11,7 +11,11 @@ import { useLayoutEffect, useMemo } from 'react';
 import { toWorld } from '@/util/math';
 import { useSpring, a } from '@react-spring/three';
 
-const scale = INITIAL_SPHERE_RADIUS * 2;
+const CROSS_SCALE = INITIAL_SPHERE_RADIUS * 2;
+const CROSS_DOWNSCALE_RADIUS_ADJUST = 0.004;
+
+const SOLO_SCALE = pointAt45.y * 2;
+const SOLO_DOWNSCALE_RADIUS_ADJUST = 0.011;
 
 const Cap = ({ tile, opacity }: { tile: CapTile; opacity?: number }) => {
   const { position: meshPosition, rotation: meshRotation, showSides } = tile;
@@ -60,36 +64,95 @@ const Cap = ({ tile, opacity }: { tile: CapTile; opacity?: number }) => {
           />
         </mesh>
       )}
-      <mesh
-        position={[-pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}
-        scale={[scale, scale, scale]}
-        rotation={[0, Math.PI / 4, 0]}
-      >
-        <tubeGeometry args={[half, 70, RAIL_RADIUS + 0.004, 50, false]} />
-        <meshStandardMaterial
-          opacity={matOpacity}
-          transparent={matOpacity < 1}
-          roughness={0}
-          metalness={1.0}
-          wireframe={debug}
-          color="#777777"
-        />
-      </mesh>
-      <mesh
-        position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}
-        scale={[scale, scale, scale]}
-        rotation={[0, 0.75 * Math.PI, 0]}
-      >
-        <tubeGeometry args={[half, 70, RAIL_RADIUS + 0.004, 50, false]} />
-        <meshStandardMaterial
-          opacity={matOpacity}
-          transparent={matOpacity < 1}
-          roughness={0}
-          metalness={1.0}
-          wireframe={debug}
-          color="#777777"
-        />
-      </mesh>
+      {['back', 'front', 'left', 'right'].includes(showSides) ? (
+        <mesh
+          position={
+            showSides === 'back'
+              ? [-pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]
+              : showSides === 'front'
+                ? [-pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]
+                : showSides === 'left'
+                  ? [-pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]
+                  : showSides === 'right'
+                    ? [pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]
+                    : [0, 0, 0]
+          }
+          scale={[SOLO_SCALE, SOLO_SCALE, SOLO_SCALE]}
+          rotation={
+            showSides === 'left' || showSides === 'right'
+              ? [0, Math.PI / 2, 0]
+              : [0, 0, 0]
+          }
+        >
+          <tubeGeometry
+            args={[
+              half,
+              70,
+              RAIL_RADIUS + SOLO_DOWNSCALE_RADIUS_ADJUST,
+              50,
+              false,
+            ]}
+          />
+          <meshStandardMaterial
+            opacity={matOpacity}
+            transparent={matOpacity < 1}
+            roughness={0}
+            metalness={1.0}
+            wireframe={debug}
+            color="#777777"
+          />
+        </mesh>
+      ) : null}
+      {['all'].includes(showSides) ? (
+        <group>
+          <mesh
+            position={[-pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}
+            scale={[CROSS_SCALE, CROSS_SCALE, CROSS_SCALE]}
+            rotation={[0, Math.PI / 4, 0]}
+          >
+            <tubeGeometry
+              args={[
+                half,
+                70,
+                RAIL_RADIUS + CROSS_DOWNSCALE_RADIUS_ADJUST,
+                50,
+                false,
+              ]}
+            />
+            <meshStandardMaterial
+              opacity={matOpacity}
+              transparent={matOpacity < 1}
+              roughness={0}
+              metalness={1.0}
+              wireframe={debug}
+              color="#777777"
+            />
+          </mesh>
+          <mesh
+            position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}
+            scale={[CROSS_SCALE, CROSS_SCALE, CROSS_SCALE]}
+            rotation={[0, 0.75 * Math.PI, 0]}
+          >
+            <tubeGeometry
+              args={[
+                half,
+                70,
+                RAIL_RADIUS + CROSS_DOWNSCALE_RADIUS_ADJUST,
+                50,
+                false,
+              ]}
+            />
+            <meshStandardMaterial
+              opacity={matOpacity}
+              transparent={matOpacity < 1}
+              roughness={0}
+              metalness={1.0}
+              wireframe={debug}
+              color="#777777"
+            />
+          </mesh>
+        </group>
+      ) : null}
     </a.group>
   );
 };

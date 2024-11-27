@@ -18,6 +18,8 @@ import {
   useGameStore,
   useKeyPress,
   CapTile,
+  BoxTile,
+  CoinTile,
 } from '@/store/gameStore';
 
 import { useRefMap } from '@/util/react';
@@ -29,6 +31,8 @@ import QuarterTurn from '../Tiles/QuarterTurn';
 import Junction from '../Tiles/Junction';
 import Toggle from '../Tiles/Toggle';
 import Cap from '../Tiles/Cap';
+import Box from '../Tiles/Box';
+import Coin from '../Tiles/Coin';
 
 type EditorProps = {
   setOrbitEnabled: (enabled: boolean) => void;
@@ -95,6 +99,19 @@ const defaultCapTile: CapTile = {
   connections: [null],
   entrances: [null],
 };
+const defaultBoxTile: BoxTile = {
+  id: `editor_cursor_${makeId()}`,
+  position: [0, 0, 0],
+  rotation: [0, 0, 0],
+  type: 'box',
+  color: '#ffffff',
+};
+const defaultCoinTile: CoinTile = {
+  id: `editor_cursor_${makeId()}`,
+  position: [0, 0, 0],
+  rotation: [0, 0, 0],
+  type: 'coin',
+};
 
 const TransformMemoized = memo(
   forwardRef(function TransformMemoized(props: TransformControlsProps, ref) {
@@ -144,7 +161,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
 
   const cursorSnappedPosition = cursorPosition.map((pos, i) => {
     return (
-      Math.round(pos * 2.0) / 2.0 +
+      Math.round(pos * 4.0) / 4.0 +
       (gridRotation === 0 && i == 1 ? 0.5 : 0) +
       (gridRotation === 1 && i == 2 ? 0.5 : 0) +
       (gridRotation === 2 && i == 0 ? 0.5 : 0)
@@ -318,6 +335,17 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
                   connections: [null],
                   entrances: [null],
                 });
+              } else if (createType === 'box') {
+                addTile({
+                  ...base,
+                  type: createType,
+                  color: '#ffffff',
+                });
+              } else if (createType === 'coin') {
+                addTile({
+                  ...base,
+                  type: createType,
+                });
               }
               autoSnap();
             }}
@@ -335,6 +363,10 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
             <Toggle tile={defaultButtonTile} opacity={0.25} />
           ) : createType === 'cap' ? (
             <Cap tile={defaultCapTile} opacity={0.25} />
+          ) : createType === 'box' ? (
+            <Box tile={defaultBoxTile} opacity={0.25} />
+          ) : createType === 'coin' ? (
+            <Coin tile={defaultCoinTile} opacity={0.25} />
           ) : null}
         </group>
       )}
@@ -343,7 +375,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
         transformMode !== null && (
           <TransformControls
             mode={transformMode}
-            translationSnap={0.5}
+            translationSnap={0.25}
             size={0.7}
             ref={transform}
             object={tileRefs.get(selectedTileId!)}
@@ -410,7 +442,11 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
                 onClick={(e) => {
                   // Don't check while dragging to avoid mouseup on
                   // transformcontrols causing a click to select a different tile
-                  if (tile.id !== selectedTileId && !draggingTransform) {
+                  if (
+                    tile.id !== selectedTileId &&
+                    !draggingTransform &&
+                    !showCursor
+                  ) {
                     e.stopPropagation();
                     setShowCursor(false);
                     setSelectedTileId(tile.id);
