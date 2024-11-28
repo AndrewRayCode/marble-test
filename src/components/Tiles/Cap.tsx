@@ -6,10 +6,11 @@ import {
 } from '../../game/constants';
 import { halfTurn, pointAt45, smallStraight, useCurve } from '@/util/curves';
 import { useRefMap } from '@/util/react';
-import { Group, Vector3 } from 'three';
+import { Group, MeshStandardMaterial, Vector3 } from 'three';
 import { useLayoutEffect, useMemo } from 'react';
 import { toWorld } from '@/util/math';
 import { useSpring, a } from '@react-spring/three';
+import { railMaterial } from '@/game/materials';
 
 const CROSS_SCALE = INITIAL_SPHERE_RADIUS * 2;
 const CROSS_DOWNSCALE_RADIUS_ADJUST = 0.004;
@@ -46,6 +47,17 @@ const Cap = ({ tile, opacity }: { tile: CapTile; opacity?: number }) => {
       setExitPositions(tile.id, [toWorld(exitRefs.get(0)!)]);
     }
   }, [tile, setExitPositions, exitRefs]);
+
+  const railMat = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        opacity: matOpacity,
+        transparent: matOpacity < 1,
+        wireframe: debug,
+        ...railMaterial,
+      }),
+    [debug, matOpacity],
+  );
 
   return (
     <a.group
@@ -93,14 +105,7 @@ const Cap = ({ tile, opacity }: { tile: CapTile; opacity?: number }) => {
               false,
             ]}
           />
-          <meshStandardMaterial
-            opacity={matOpacity}
-            transparent={matOpacity < 1}
-            roughness={0}
-            metalness={1.0}
-            wireframe={debug}
-            color="#777777"
-          />
+          <primitive object={railMat} />
         </mesh>
       ) : null}
       {['all'].includes(showSides) ? (
@@ -119,14 +124,7 @@ const Cap = ({ tile, opacity }: { tile: CapTile; opacity?: number }) => {
                 false,
               ]}
             />
-            <meshStandardMaterial
-              opacity={matOpacity}
-              transparent={matOpacity < 1}
-              roughness={0}
-              metalness={1.0}
-              wireframe={debug}
-              color="#777777"
-            />
+            <primitive object={railMat} />
           </mesh>
           <mesh
             position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}
@@ -142,14 +140,7 @@ const Cap = ({ tile, opacity }: { tile: CapTile; opacity?: number }) => {
                 false,
               ]}
             />
-            <meshStandardMaterial
-              opacity={matOpacity}
-              transparent={matOpacity < 1}
-              roughness={0}
-              metalness={1.0}
-              wireframe={debug}
-              color="#777777"
-            />
+            <primitive object={railMat} />
           </mesh>
         </group>
       ) : null}

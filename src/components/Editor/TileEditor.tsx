@@ -5,6 +5,7 @@ import {
   ActionAxis,
   ActionType,
   ButtonActionType,
+  GateActionType,
   NumTrip,
   RailTile,
   Side,
@@ -144,15 +145,17 @@ const ActionEditor = ({
           <label className="text-slate-400">State</label>
           <select
             className={cx(styles.input, 'mb-2 w-full')}
-            value={action.state}
+            value={action.gateAction}
             onChange={(e) => {
               updateTileAction(tile.id, actionIndex, {
-                state: e.target.value as 'open' | 'closed',
+                gateAction: e.target.value as GateActionType,
               });
             }}
           >
+            <option value=""></option>
+            <option value="toggle">Toggle</option>
             <option value="open">Open</option>
-            <option value="closed">Closed</option>
+            <option value="close">Closed</option>
           </select>
         </div>
       ) : null}
@@ -204,6 +207,23 @@ export const TileEditor = ({ selectedTileId }: { selectedTileId: string }) => {
       <div className="mb-3">
         <label className="text-slate-400">Type</label> {selectedTile.type}
       </div>
+      {selectedTile.type === 'gate' && (
+        <div>
+          <label className="text-slate-400">Default State</label>
+          <select
+            className={cx(styles.input, 'mb-2 w-full')}
+            value={selectedTile.defaultState}
+            onChange={(e) => {
+              updateTileAndRecompute(selectedTileId, {
+                defaultState: e.target.value as 'open' | 'closed',
+              });
+            }}
+          >
+            <option value="open">Open</option>
+            <option value="closed">Closed</option>
+          </select>
+        </div>
+      )}
       {selectedTile.type === 'button' && (
         <div>
           <div className="mb-3">
@@ -217,6 +237,7 @@ export const TileEditor = ({ selectedTileId }: { selectedTileId: string }) => {
                 });
               }}
             >
+              <option value=""></option>
               <option value="toggle">Toggle</option>
               <option value="click">Click</option>
               <option value="timed">Timed</option>

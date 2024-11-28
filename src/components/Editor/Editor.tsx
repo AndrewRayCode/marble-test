@@ -260,6 +260,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
     setTransformMode('scale');
   });
   useKeyPress('esc', () => {
+    setShowCursor(false);
     setTransformMode(null);
   });
 

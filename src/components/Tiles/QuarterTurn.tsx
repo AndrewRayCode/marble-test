@@ -8,6 +8,9 @@ import {
 } from '@/util/curves';
 import { useSpring, a } from '@react-spring/three';
 import DebugCurveHandles from './DebugCurveHandles';
+import { useMemo } from 'react';
+import { MeshStandardMaterial } from 'three';
+import { railMaterial } from '@/game/materials';
 
 const QuarterTurn = ({
   tile,
@@ -33,6 +36,17 @@ const QuarterTurn = ({
       friction: 26,
     },
   });
+
+  const railMat = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        opacity: matOpacity,
+        transparent: matOpacity < 1,
+        wireframe: debug,
+        ...railMaterial,
+      }),
+    [debug, matOpacity],
+  );
 
   return (
     <a.group
@@ -60,56 +74,28 @@ const QuarterTurn = ({
       {['all', 'right', 'front'].includes(showSides) ? (
         <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
           <tubeGeometry args={[c2, 70, RAIL_RADIUS, 50, false]} />
-          <meshStandardMaterial
-            opacity={matOpacity}
-            transparent={matOpacity < 1}
-            roughness={0}
-            metalness={1.0}
-            wireframe={debug}
-            color="#777777"
-          />
+          <primitive object={railMat} />
         </mesh>
       ) : null}
       {/* front left */}
       {['all', 'front', 'left'].includes(showSides) ? (
         <mesh position={[-pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
           <tubeGeometry args={[c1, 70, RAIL_RADIUS, 50, false]} />
-          <meshStandardMaterial
-            opacity={matOpacity}
-            transparent={matOpacity < 1}
-            roughness={0}
-            metalness={1.0}
-            wireframe={debug}
-            color="#777777"
-          />
+          <primitive object={railMat} />
         </mesh>
       ) : null}
       {/* back right */}
       {['all', 'right', 'back'].includes(showSides) ? (
         <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}>
           <tubeGeometry args={[c2, 70, RAIL_RADIUS, 50, false]} />
-          <meshStandardMaterial
-            opacity={matOpacity}
-            transparent={matOpacity < 1}
-            roughness={0}
-            metalness={1.0}
-            wireframe={debug}
-            color="#777777"
-          />
+          <primitive object={railMat} />
         </mesh>
       ) : null}
       {/* back left */}
       {['all', 'left', 'back'].includes(showSides) ? (
         <mesh position={[-pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}>
           <tubeGeometry args={[c1, 70, RAIL_RADIUS, 50, false]} />
-          <meshStandardMaterial
-            opacity={matOpacity}
-            transparent={matOpacity < 1}
-            roughness={0}
-            metalness={1.0}
-            wireframe={debug}
-            color="#777777"
-          />
+          <primitive object={railMat} />
         </mesh>
       ) : null}
     </a.group>

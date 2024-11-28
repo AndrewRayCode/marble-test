@@ -260,38 +260,34 @@ const Game = () => {
             s.enabledBooleanSwitchesFor[-1]?.[button.id] !== false;
           const { actions } = button;
 
-          // Rolling over action triggers each time
+          // Rolling over action triggers each time, and rolling away resets
+          // the button itself (independent of the action)
           if (button.actionType === 'click') {
             if (enabled && isNear) {
               playBtnSfx();
               s.setEnabledBooleanSwitchesFor(-1, button.id, false);
-              // s.setBooleanSwitch(button.id, !on);
 
               actions.forEach((action) => {
-                s.applyAction(action);
+                s.applyAction(currentTile, action);
               });
             } else if (!enabled && !isNear) {
               s.setEnabledBooleanSwitchesFor(-1, button.id, true);
             }
+            // Roling over the button triggers the action each time, and the button
+            // state stays in this state until hit again, independent of the action
           } else if (button.actionType === 'toggle') {
             if (enabled && isNear) {
               playBtnSfx();
               s.setEnabledBooleanSwitchesFor(-1, button.id, false);
               s.setBooleanSwitch(button.id, !on);
 
-              if (isNear) {
+              if (!on) {
                 actions.forEach((action) => {
-                  s.applyAction(action);
+                  s.applyAction(currentTile, action);
                 });
               } else {
                 actions.forEach((action) => {
-                  action.targetTiles.forEach((tileId) => {
-                    if (action.type === 'rotation') {
-                      s.clearTransform(tileId, action.type);
-                    } else if (action.type === 'gate') {
-                      s.setGateState(tileId, action.state);
-                    }
-                  });
+                  s.clearAction(currentTile, action);
                 });
               }
             } else if (!enabled && !isNear) {
@@ -304,7 +300,7 @@ const Game = () => {
               s.setEnabledBooleanSwitchesFor(-1, button.id, false);
               s.setBooleanSwitch(button.id, !on);
               actions.forEach((action) => {
-                s.applyAction(action);
+                s.applyAction(currentTile, action);
               });
             }
             if (!enabled && !isNear) {
@@ -313,13 +309,7 @@ const Game = () => {
               s.setBooleanSwitch(button.id, !on);
 
               actions.forEach((action) => {
-                action.targetTiles.forEach((tileId) => {
-                  if (action.type === 'rotation') {
-                    s.clearTransform(tileId, action.type);
-                  } else if (action.type === 'gate') {
-                    s.clearGateState(tileId);
-                  }
-                });
+                s.clearAction(currentTile, action);
               });
             }
           }

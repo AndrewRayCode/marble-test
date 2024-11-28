@@ -8,10 +8,11 @@ import {
   useCurve,
 } from '@/util/curves';
 import { useRefMap } from '@/util/react';
-import { Group, Vector3 } from 'three';
+import { Group, MeshStandardMaterial, Vector3 } from 'three';
 import { useLayoutEffect, useMemo } from 'react';
 import { toWorld } from '@/util/math';
 import { useSpring, a } from '@react-spring/three';
+import { railMaterial } from '@/game/materials';
 
 const Junction = ({
   tile,
@@ -56,6 +57,17 @@ const Junction = ({
     }
   }, [tile, setExitPositions, exitRefs]);
 
+  const railMat = useMemo(
+    () =>
+      new MeshStandardMaterial({
+        opacity: matOpacity,
+        transparent: matOpacity < 1,
+        wireframe: debug,
+        ...railMaterial,
+      }),
+    [debug, matOpacity],
+  );
+
   return (
     <a.group
       position={position}
@@ -79,14 +91,7 @@ const Junction = ({
       {['all', 'right', 'front'].includes(showSides) ? (
         <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
           <tubeGeometry args={[small, 70, RAIL_RADIUS, 50, false]} />
-          <meshStandardMaterial
-            opacity={matOpacity}
-            transparent={matOpacity < 1}
-            roughness={0}
-            metalness={1.0}
-            wireframe={debug}
-            color="#777777"
-          />
+          <primitive object={railMat} />
         </mesh>
       ) : null}
       {/* front left */}
@@ -96,28 +101,14 @@ const Junction = ({
           rotation={[0, Math.PI, 0]}
         >
           <tubeGeometry args={[small, 70, RAIL_RADIUS, 50, false]} />
-          <meshStandardMaterial
-            opacity={matOpacity}
-            transparent={matOpacity < 1}
-            roughness={0}
-            metalness={1.0}
-            wireframe={debug}
-            color="#777777"
-          />
+          <primitive object={railMat} />
         </mesh>
       ) : null}
       {/* back right */}
       {['all', 'back'].includes(showSides) ? (
         <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}>
           <tubeGeometry args={[small, 70, RAIL_RADIUS, 50, false]} />
-          <meshStandardMaterial
-            opacity={matOpacity}
-            transparent={matOpacity < 1}
-            roughness={0}
-            metalness={1.0}
-            wireframe={debug}
-            color="#777777"
-          />
+          <primitive object={railMat} />
         </mesh>
       ) : null}
       {/* back left */}
@@ -127,14 +118,7 @@ const Junction = ({
           rotation={[0, Math.PI, 0]}
         >
           <tubeGeometry args={[small, 70, RAIL_RADIUS, 50, false]} />
-          <meshStandardMaterial
-            opacity={matOpacity}
-            transparent={matOpacity < 1}
-            roughness={0}
-            metalness={1.0}
-            wireframe={debug}
-            color="#777777"
-          />
+          <primitive object={railMat} />
         </mesh>
       ) : null}
       {/* top back */}
@@ -144,14 +128,7 @@ const Junction = ({
           rotation={[0, 0, -Math.PI / 2]}
         >
           <tubeGeometry args={[str8, 70, RAIL_RADIUS, 50, false]} />
-          <meshStandardMaterial
-            opacity={matOpacity}
-            transparent={matOpacity < 1}
-            roughness={0}
-            metalness={1.0}
-            wireframe={debug}
-            color="#777777"
-          />
+          <primitive object={railMat} />
         </mesh>
       ) : null}
       {/* top front */}
@@ -161,14 +138,7 @@ const Junction = ({
           rotation={[0, 0, -Math.PI / 2]}
         >
           <tubeGeometry args={[str8, 70, RAIL_RADIUS, 50, false]} />
-          <meshStandardMaterial
-            opacity={matOpacity}
-            transparent={matOpacity < 1}
-            roughness={0}
-            metalness={1.0}
-            wireframe={debug}
-            color="#777777"
-          />
+          <primitive object={railMat} />
         </mesh>
       ) : null}
     </a.group>

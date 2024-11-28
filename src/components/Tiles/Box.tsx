@@ -21,8 +21,17 @@ const Box = ({ tile, opacity }: { tile: BoxTile; opacity?: number }) => {
       position={position}
       rotation={rotation as unknown as [number, number, number]}
     >
-      <mesh receiveShadow>
-        <boxGeometry args={[1, 1, 1]} />
+      <mesh position={[0, 0.4, 0]}>
+        <boxGeometry args={[1, 0.2, 1]} />
+        <meshStandardMaterial
+          roughness={0.5}
+          opacity={matOpacity}
+          transparent={matOpacity < 1}
+          color={'#66ff77'}
+        />
+      </mesh>
+      <mesh position={[0, -0.1, 0]}>
+        <boxGeometry args={[1, 0.8, 1]} />
         <meshStandardMaterial
           roughness={0.1}
           opacity={matOpacity}

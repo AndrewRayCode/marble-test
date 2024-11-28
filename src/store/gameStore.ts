@@ -26,10 +26,11 @@ export type RotateAction = {
   targetTiles: string[];
   axis: ActionAxis;
 };
+export type GateActionType = 'toggle' | 'open' | 'close';
 export type GateAction = {
   type: 'gate';
   targetTiles: string[];
-  state: 'open' | 'closed';
+  gateAction: GateActionType;
 };
 export type Action = RotateAction | GateAction;
 export type ActionType = Action['type'];
@@ -209,7 +210,8 @@ export interface GameStore {
     switchId: string | number,
     enabled: boolean,
   ) => void;
-  applyAction: (action: Action) => void;
+  applyAction: (tile: Tile, action: Action) => void;
+  clearAction: (tile: Tile, action: Action) => void;
 
   transforms: Record<string, Transform>;
   setTransform: (id: string, transform: Transform) => void;
@@ -443,7 +445,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
       };
       return { enabledBooleanSwitchesFor };
     }),
-  applyAction: (action) => {
+  applyAction: (tile, action) => {
     const s = get();
     const level = s.levels.find((l) => l.id === s.currentLevelId)!;
     if (action.type === 'rotation') {
@@ -477,9 +479,29 @@ export const useGameStore = create<GameStore>((set, get) => ({
       });
     } else if (action.type === 'gate') {
       action.targetTiles.forEach((targetId) => {
-        s.setGateState(targetId, action.state);
+        const target = level.tiles.find((t) => t.id === targetId)!;
+        if (action.gateAction === 'toggle') {
+          const gs =
+            s.gateStates[targetId] || (target as GateTile).defaultState;
+          s.setGateState(targetId, gs === 'open' ? 'closed' : 'open');
+        } else {
+          s.setGateState(
+            targetId,
+            action.gateAction === 'open' ? 'closed' : 'open',
+          );
+        }
       });
     }
+  },
+  clearAction: (tile, action) => {
+    const s = get();
+    action.targetTiles.forEach((targetId) => {
+      if (action.type === 'rotation') {
+        s.clearTransform(tile.id, action.type);
+      } else if (action.type === 'gate') {
+        s.clearGateState(targetId);
+      }
+    });
   },
 
   transforms: {},
