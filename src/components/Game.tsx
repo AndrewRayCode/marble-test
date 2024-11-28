@@ -47,6 +47,7 @@ import EditorUI from './Editor/EditorUI';
 import Cap from './Tiles/Cap';
 import Box from './Tiles/Box';
 import Coin from './Tiles/Coin';
+import Gate from './Tiles/Gate';
 
 const lowest = (a: {
   left: number;
@@ -253,11 +254,11 @@ const Game = () => {
         .filter((t): t is ButtonTile => t.type === 'button')
         .forEach((button) => {
           const isNear =
-            point.distanceTo(new Vector3(...button.position)) < 0.2;
+            point.distanceTo(new Vector3(...button.position)) < 0.5;
           const on = s.booleanSwitches[button.id];
           const enabled =
             s.enabledBooleanSwitchesFor[-1]?.[button.id] !== false;
-          const { action } = button;
+          const { actions } = button;
 
           // Rolling over action triggers each time
           if (button.actionType === 'click') {
@@ -266,9 +267,9 @@ const Game = () => {
               s.setEnabledBooleanSwitchesFor(-1, button.id, false);
               // s.setBooleanSwitch(button.id, !on);
 
-              if (action) {
+              actions.forEach((action) => {
                 s.applyAction(action);
-              }
+              });
             } else if (!enabled && !isNear) {
               s.setEnabledBooleanSwitchesFor(-1, button.id, true);
             }
@@ -278,14 +279,20 @@ const Game = () => {
               s.setEnabledBooleanSwitchesFor(-1, button.id, false);
               s.setBooleanSwitch(button.id, !on);
 
-              if (action) {
-                if (isNear) {
+              if (isNear) {
+                actions.forEach((action) => {
                   s.applyAction(action);
-                } else {
+                });
+              } else {
+                actions.forEach((action) => {
                   action.targetTiles.forEach((tileId) => {
-                    s.clearTransform(tileId, action.type);
+                    if (action.type === 'rotation') {
+                      s.clearTransform(tileId, action.type);
+                    } else if (action.type === 'gate') {
+                      s.setGateState(tileId, action.state);
+                    }
                   });
-                }
+                });
               }
             } else if (!enabled && !isNear) {
               s.setEnabledBooleanSwitchesFor(-1, button.id, true);
@@ -296,20 +303,24 @@ const Game = () => {
               playBtnSfx();
               s.setEnabledBooleanSwitchesFor(-1, button.id, false);
               s.setBooleanSwitch(button.id, !on);
-              if (action) {
+              actions.forEach((action) => {
                 s.applyAction(action);
-              }
+              });
             }
             if (!enabled && !isNear) {
               playBtnSfx();
               s.setEnabledBooleanSwitchesFor(-1, button.id, true);
               s.setBooleanSwitch(button.id, !on);
 
-              if (action) {
+              actions.forEach((action) => {
                 action.targetTiles.forEach((tileId) => {
-                  s.clearTransform(tileId, action.type);
+                  if (action.type === 'rotation') {
+                    s.clearTransform(tileId, action.type);
+                  } else if (action.type === 'gate') {
+                    s.clearGateState(tileId);
+                  }
                 });
-              }
+              });
             }
           }
         });
@@ -508,6 +519,8 @@ const Game = () => {
                 visible={!collectedItems.has(tile.id)}
               />
             );
+          } else if (tile.type === 'gate') {
+            return <Gate key={tile.id} tile={tile} />;
           }
         })}
 

@@ -1,13 +1,15 @@
 'use client';
 
 import {
+  Action,
   ActionAxis,
-  ActionTargetType,
   ActionType,
+  ButtonActionType,
   NumTrip,
   RailTile,
   Side,
   StrTrip,
+  Tile,
   useGameStore,
 } from '@/store/gameStore';
 
@@ -76,6 +78,109 @@ const ArrayOfIdsEditor = ({
   );
 };
 
+const ActionEditor = ({
+  tile,
+  actionIndex,
+  onRemove,
+}: {
+  tile: Tile & { actions: Action[] };
+  actionIndex: number;
+  onRemove: () => void;
+}) => {
+  const action = tile.actions[actionIndex];
+  const updateTileAction = useGameStore((state) => state.updateTileAction);
+
+  return (
+    <div className="border-solid border-2 p-2 mb-3 rounded border-slate-600">
+      <div className="mb-1">
+        <label className="text-slate-400">Action Type</label>
+        <select
+          className={cx(styles.input, 'mb-2 w-full')}
+          value={action.type}
+          onChange={(e) => {
+            updateTileAction(tile.id, actionIndex, {
+              type: e.target.value as ActionType,
+            });
+          }}
+        >
+          <option value="rotation">Rotation</option>
+          <option value="gate">Gate</option>
+        </select>
+      </div>
+      {action.type === 'rotation' ? (
+        <div className="mb-1 grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-slate-400">Axis</label>
+            <select
+              className={cx(styles.input, 'mb-2 w-full')}
+              value={action.axis}
+              onChange={(e) => {
+                updateTileAction(tile.id, actionIndex, {
+                  axis: e.target.value as ActionAxis,
+                });
+              }}
+            >
+              <option value="x">X</option>
+              <option value="y">Y</option>
+              <option value="z">Z</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-slate-400">Degrees</label>
+            <input
+              className={cx(styles.input, 'mb-2 w-full')}
+              value={action.degrees}
+              onChange={(e) => {
+                updateTileAction(tile.id, actionIndex, {
+                  degrees: parseInt(e.target.value),
+                });
+              }}
+              type="number"
+            />
+          </div>
+        </div>
+      ) : action.type === 'gate' ? (
+        <div>
+          <label className="text-slate-400">State</label>
+          <select
+            className={cx(styles.input, 'mb-2 w-full')}
+            value={action.state}
+            onChange={(e) => {
+              updateTileAction(tile.id, actionIndex, {
+                state: e.target.value as 'open' | 'closed',
+              });
+            }}
+          >
+            <option value="open">Open</option>
+            <option value="closed">Closed</option>
+          </select>
+        </div>
+      ) : null}
+      <div className="mb-1">
+        <label className="text-slate-400">Action Targets</label>
+        <ArrayOfIdsEditor
+          ids={action.targetTiles || []}
+          onChange={(targetTiles) => {
+            updateTileAction(tile.id, actionIndex, {
+              targetTiles,
+            });
+          }}
+        />
+      </div>
+
+      <button
+        className={cx(styles.toolbarButton, 'bg-gray-700')}
+        onClick={(e) => {
+          e.preventDefault();
+          onRemove();
+        }}
+      >
+        x
+      </button>
+    </div>
+  );
+};
+
 export const TileEditor = ({ selectedTileId }: { selectedTileId: string }) => {
   const currentLevelId = useGameStore((state) => state.currentLevelId);
   const levels = useGameStore((state) => state.levels);
@@ -86,7 +191,6 @@ export const TileEditor = ({ selectedTileId }: { selectedTileId: string }) => {
   const updateTileAndRecompute = useGameStore(
     (state) => state.updateTileAndRecompute,
   );
-  const updateTileAction = useGameStore((state) => state.updateTileAction);
 
   if (!selectedTile) {
     return <div>Tile &quot;{selectedTileId}&quot; not found!</div>;
@@ -109,7 +213,7 @@ export const TileEditor = ({ selectedTileId }: { selectedTileId: string }) => {
               value={selectedTile.actionType}
               onChange={(e) => {
                 updateTileAndRecompute(selectedTileId, {
-                  actionType: e.target.value as ActionType,
+                  actionType: e.target.value as ButtonActionType,
                 });
               }}
             >
@@ -119,65 +223,41 @@ export const TileEditor = ({ selectedTileId }: { selectedTileId: string }) => {
               <option value="hold">Hold</option>
             </select>
           </div>
-          <div className="mb-3">
-            <label className="text-slate-400">Action Type</label>
-            <select
-              className={cx(styles.input, 'mb-2 w-full')}
-              value={selectedTile.action?.type}
-              onChange={(e) => {
-                updateTileAction(selectedTileId, {
-                  type: e.target.value as ActionTargetType,
-                });
-              }}
-            >
-              <option value="rotation">Rotation</option>
-            </select>
-          </div>
-          {selectedTile.action?.type === 'rotation' ||
-          !selectedTile.action?.type ? (
-            <div className="mb-3 grid grid-cols-2 gap-2">
-              <div>
-                <label className="text-slate-400">Axis</label>
-                <select
-                  className={cx(styles.input, 'mb-2 w-full')}
-                  value={selectedTile.action?.axis}
-                  onChange={(e) => {
-                    updateTileAction(selectedTileId, {
-                      axis: e.target.value as ActionAxis,
-                    });
-                  }}
-                >
-                  <option value="x">X</option>
-                  <option value="y">Y</option>
-                  <option value="z">Z</option>
-                </select>
-              </div>
-              <div>
-                <label className="text-slate-400">Degrees</label>
-                <input
-                  className={cx(styles.input, 'mb-2 w-full')}
-                  value={selectedTile.action?.degrees}
-                  onChange={(e) => {
-                    updateTileAction(selectedTileId, {
-                      degrees: parseInt(e.target.value),
-                    });
-                  }}
-                  type="number"
-                />
-              </div>
+          {'actions' in selectedTile ? (
+            <div>
+              <label className="text-slate-400 block mb-2">Actions</label>
+              {selectedTile.actions.map((_, index) => (
+                <div key={index} className="mb-1">
+                  <ActionEditor
+                    tile={selectedTile}
+                    actionIndex={index}
+                    onRemove={() => {
+                      updateTileAndRecompute(selectedTileId, {
+                        actions: selectedTile.actions.filter(
+                          (_, i) => i !== index,
+                        ),
+                      });
+                    }}
+                  />
+                </div>
+              ))}
+              <button
+                className={cx(styles.toolbarButton, 'bg-gray-700')}
+                onClick={() => {
+                  updateTileAndRecompute(selectedTileId, {
+                    actions: selectedTile.actions.concat({
+                      type: 'rotation',
+                      axis: 'x',
+                      degrees: 90,
+                      targetTiles: [],
+                    }),
+                  });
+                }}
+              >
+                Add Action
+              </button>
             </div>
           ) : null}
-          <div className="mb-3">
-            <label className="text-slate-400">Action Targets</label>
-            <ArrayOfIdsEditor
-              ids={selectedTile.action?.targetTiles || []}
-              onChange={(targetTiles) => {
-                updateTileAction(selectedTileId, {
-                  targetTiles,
-                });
-              }}
-            />
-          </div>
         </div>
       )}
       {'connections' in selectedTile && (

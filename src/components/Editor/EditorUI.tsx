@@ -175,7 +175,7 @@ export const EditorUI = ({
             className={cx(styles.toolbarButton, 'bg-gray-700', {
               [styles.selected]: createType === 'coin',
             })}
-            key="btn"
+            key="coin"
             onClick={(e) => {
               e.stopPropagation();
               e.preventDefault();
@@ -183,6 +183,19 @@ export const EditorUI = ({
             }}
           >
             <div>Coin</div>
+          </div>,
+          <div
+            className={cx(styles.toolbarButton, 'bg-gray-700', {
+              [styles.selected]: createType === 'gate',
+            })}
+            key="gat"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setCreateType('gate');
+            }}
+          >
+            <div>Gate</div>
           </div>,
         ]}
       </div>

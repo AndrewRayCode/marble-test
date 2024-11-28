@@ -3,9 +3,8 @@ import { calculateExitBuddies, deg2Rad, TileExit } from '@/util/math';
 import { post } from '@/util/network';
 import { Level as DbLevel } from '@prisma/client';
 import { useKeyboardControls } from '@react-three/drei';
-import { use, useEffect } from 'react';
+import { useEffect } from 'react';
 import { CubicBezierCurve3, Vector3 } from 'three';
-import { deserialize, serialize } from 'v8';
 import { create } from 'zustand';
 
 export type Side = 'left' | 'right' | 'front' | 'back';
@@ -20,17 +19,23 @@ export type TileComputed = {
   exits: Vector3[];
 };
 
-export type ActionTargetType = 'rotation';
 export type ActionAxis = 'x' | 'y' | 'z';
-export type Action = {
+export type RotateAction = {
   type: 'rotation';
   degrees: number;
   targetTiles: string[];
   axis: ActionAxis;
 };
+export type GateAction = {
+  type: 'gate';
+  targetTiles: string[];
+  state: 'open' | 'closed';
+};
+export type Action = RotateAction | GateAction;
+export type ActionType = Action['type'];
 
 export const defaultAction = {
-  type: 'rotation' as ActionTargetType,
+  type: 'rotation',
   degrees: 90,
   targetTiles: [],
   axis: 'y' as ActionAxis,
@@ -43,13 +48,13 @@ export type TileBase = {
   type: string;
 };
 
-export type ActionType = 'toggle' | 'click' | 'timed' | 'hold';
+export type ButtonActionType = 'toggle' | 'click' | 'timed' | 'hold';
 export type ButtonTile = TileBase & {
   position: [number, number, number];
   rotation: [number, number, number];
   type: 'button';
-  actionType: ActionType;
-  action?: Action;
+  actionType: ButtonActionType;
+  actions: Action[];
 };
 
 type NullStr = string | null;
@@ -86,6 +91,12 @@ export type CoinTile = TileBase & {
   type: 'coin';
 };
 
+export type GateState = 'open' | 'closed';
+export type GateTile = TileBase & {
+  type: 'gate';
+  defaultState: GateState;
+};
+
 export const isRailTile = (tile: Tile): tile is RailTile =>
   tile.type === 'straight' || tile.type === 'quarter' || tile.type === 'cap';
 
@@ -105,7 +116,7 @@ export const isJunctionTile = (tile: Tile): tile is JunctionTile =>
 // Only tiles the player can roll / travel on
 export type TrackTile = RailTile | JunctionTile | CapTile;
 // All valid level tiles
-export type Tile = TrackTile | ButtonTile | BoxTile | CoinTile;
+export type Tile = TrackTile | ButtonTile | BoxTile | CoinTile | GateTile;
 
 export type Level = Omit<DbLevel, 'id' | 'data'> & {
   id?: string;
@@ -145,7 +156,11 @@ export interface GameStore {
   setIsEditing: (isEditing: boolean) => void;
   addTile: (tile: Tile) => void;
   deleteTile: (tileId: string) => void;
-  updateTileAction: (tileId: string, action: Partial<Action>) => void;
+  updateTileAction: <T extends Action>(
+    tileId: string,
+    actionIdx: number,
+    action: Partial<T>,
+  ) => void;
   updateTileAndRecompute: <T extends Tile>(
     tileId: string,
     tile: Partial<T>,
@@ -208,6 +223,10 @@ export interface GameStore {
 
   collectedItems: Set<string>;
   collectItem: (id: string) => void;
+
+  gateStates: Record<string, GateState>;
+  setGateState: (id: string, state: GateState) => void;
+  clearGateState: (id: string) => void;
 
   resetLevel: () => void;
 }
@@ -272,13 +291,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
       tiles: level.tiles.filter((tile) => tile.id !== tileId),
     });
   },
-  updateTileAction: (tileId, action) => {
+  updateTileAction: (tileId, actionIdx, action) => {
     const s = get();
     const level = s.levels.find((l) => l.id === s.currentLevelId)!;
     const t = level.tiles.find((tile) => tile.id === tileId) as ButtonTile;
     const updated: ButtonTile = {
       ...t,
-      action: { ...(t.action || defaultAction), ...action },
+      actions: t.actions.map((a, i) =>
+        i === actionIdx ? { ...a, ...action } : a,
+      ),
     };
     const tiles = level.tiles.map((tile) =>
       tileId === tile.id ? updated : tile,
@@ -425,9 +446,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   applyAction: (action) => {
     const s = get();
     const level = s.levels.find((l) => l.id === s.currentLevelId)!;
-    action.targetTiles.forEach((targetId) => {
-      const target = level.tiles.find((t) => t.id === targetId)!;
-      if (action!.type === 'rotation') {
+    if (action.type === 'rotation') {
+      action.targetTiles.forEach((targetId) => {
+        const target = level.tiles.find((t) => t.id === targetId)!;
         const start = s.transforms[targetId]?.rotation ||
           target?.rotation || [0, 0, 0];
         const { axis, degrees } = action;
@@ -453,8 +474,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
         // right now this does not wait for any springs to come to rest, it
         // changes them instantly based on the target transform
         s.autoSnap(updatedComputed);
-      }
-    });
+      });
+    } else if (action.type === 'gate') {
+      action.targetTiles.forEach((targetId) => {
+        s.setGateState(targetId, action.state);
+      });
+    }
   },
 
   transforms: {},
@@ -495,6 +520,21 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return { collectedItems: state.collectedItems };
     }),
 
+  gateStates: {},
+  setGateState: (id, state) =>
+    set((s) => ({
+      gateStates: {
+        ...s.gateStates,
+        [id]: state,
+      },
+    })),
+  clearGateState: (id) =>
+    set((s) => {
+      const gateStates = { ...s.gateStates };
+      delete gateStates[id];
+      return { gateStates };
+    }),
+
   resetLevel: () =>
     set((state) => {
       if (!state.currentLevelId) {
@@ -527,6 +567,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         nextConnection: 0,
         playerMomentum: 0,
         collectedItems: new Set(),
+        gateStates: {},
         tilesComputed,
         currentTile,
       };
@@ -569,10 +610,14 @@ export const deserializeLevel = (level: DbLevel): Level => {
     id: level.id,
     name: level.name,
     description: level.description,
-    tiles: data.tiles.map((t) =>
+    // @ts-expect-error migration
+    tiles: data.tiles.map((t) => ({
+      ...t,
       // @ts-expect-error migration
-      t.type === 'tark' ? { ...t, type: 'button' } : t,
-    ),
+      ...(t.type === 'tark' ? { type: 'button' } : {}),
+      // @ts-expect-error migration
+      ...(t.action ? { actions: [t.action] } : {}),
+    })),
     startingTileId: data.startingTileId,
   };
 };

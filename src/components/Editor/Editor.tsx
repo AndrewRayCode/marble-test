@@ -20,6 +20,7 @@ import {
   CapTile,
   BoxTile,
   CoinTile,
+  GateTile,
 } from '@/store/gameStore';
 
 import { useRefMap } from '@/util/react';
@@ -33,6 +34,7 @@ import Toggle from '../Tiles/Toggle';
 import Cap from '../Tiles/Cap';
 import Box from '../Tiles/Box';
 import Coin from '../Tiles/Coin';
+import Gate from '../Tiles/Gate';
 
 type EditorProps = {
   setOrbitEnabled: (enabled: boolean) => void;
@@ -89,6 +91,7 @@ const defaultButtonTile: ButtonTile = {
   rotation: [0, 0, 0],
   type: 'button',
   actionType: 'toggle',
+  actions: [],
 };
 const defaultCapTile: CapTile = {
   id: `editor_cursor_${makeId()}`,
@@ -111,6 +114,13 @@ const defaultCoinTile: CoinTile = {
   position: [0, 0, 0],
   rotation: [0, 0, 0],
   type: 'coin',
+};
+const defaultGateTile: GateTile = {
+  id: `editor_cursor_${makeId()}`,
+  position: [0, 0, 0],
+  rotation: [0, 0, 0],
+  type: 'gate',
+  defaultState: 'closed',
 };
 
 const TransformMemoized = memo(
@@ -146,7 +156,12 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
   const selectedTile = level?.tiles?.find((tile) => tile.id === selectedTileId);
 
   const targetTileIds =
-    selectedTile?.type === 'button' ? selectedTile.action?.targetTiles : [];
+    selectedTile?.type === 'button'
+      ? selectedTile.actions?.reduce<string[]>(
+          (as, a) => ('targetTiles' in a ? [...as, ...a.targetTiles] : as),
+          [],
+        )
+      : [];
 
   const [gridPosition, setGridPosition] = useState([
     TILE_HALF_WIDTH,
@@ -326,6 +341,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
                   ...base,
                   type: createType,
                   actionType: 'toggle',
+                  actions: [],
                 });
               } else if (createType === 'cap') {
                 addTile({
@@ -345,6 +361,12 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
                 addTile({
                   ...base,
                   type: createType,
+                });
+              } else if (createType === 'gate') {
+                addTile({
+                  ...base,
+                  type: createType,
+                  defaultState: 'open',
                 });
               }
               autoSnap();
@@ -367,6 +389,8 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
             <Box tile={defaultBoxTile} opacity={0.25} />
           ) : createType === 'coin' ? (
             <Coin tile={defaultCoinTile} opacity={0.25} />
+          ) : createType === 'gate' ? (
+            <Gate tile={defaultGateTile} opacity={0.25} />
           ) : null}
         </group>
       )}
