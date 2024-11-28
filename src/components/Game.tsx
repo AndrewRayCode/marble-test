@@ -28,6 +28,7 @@ import {
   TrackTile,
   useGameStore,
   useKeyPress,
+  GateTile,
 } from '@/store/gameStore';
 import { toScreen } from '@/util/math';
 import OnScreenArrows from './OnScreenArrows';
@@ -36,6 +37,7 @@ import EditorComponent from './Editor/Editor';
 import buttonSfx from '@/public/button.mp3';
 import coinSfx from '@/public/coin.mp3';
 import moneySfx from '@/public/money.mp3';
+import errorSfx from '@/public/error.mp3';
 
 import cx from 'classnames';
 import Toggle from './Tiles/Toggle';
@@ -135,6 +137,7 @@ const Game = () => {
   const [playBtnSfx] = useSound(buttonSfx, { volume: 0.5 });
   const [playCoinSfx] = useSound(coinSfx, { volume: 0.15 });
   const [playMoneySfx] = useSound(moneySfx, { volume: 1 });
+  const [playErrorSfx] = useSound(errorSfx, { volume: 1 });
 
   // Start game :(
   useEffect(() => {
@@ -246,6 +249,30 @@ const Game = () => {
             playCoinSfx();
             playMoneySfx();
             s.collectItem(coin.id);
+          }
+        });
+
+      // Check for switch presses
+      level.tiles
+        .filter((t): t is GateTile => t.type === 'gate')
+        .forEach((gate) => {
+          const isNear = point.distanceTo(new Vector3(...gate.position)) < 0.5;
+          const hasBonked = s.enabledBooleanSwitchesFor[-1]?.[gate.id] === true;
+          // Bonk!
+          if (isNear && !hasBonked) {
+            if (s.playerMomentum !== 0) {
+              s.setEnabledBooleanSwitchesFor(-1, gate.id, true);
+              playErrorSfx();
+              setMomentum(0);
+            }
+            // TODO: Need to figure out what direction of travel is allowed
+            if (key().up) {
+              setMomentum(-PLAYER_SPEED);
+            } else if (key().down) {
+              setMomentum(PLAYER_SPEED);
+            }
+          } else if (!isNear && hasBonked) {
+            s.setEnabledBooleanSwitchesFor(-1, gate.id, false);
           }
         });
 
