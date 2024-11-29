@@ -147,6 +147,10 @@ export interface GameStore {
 
   buddies: TileExit[][];
   setBuddies: (buddies: TileExit[][]) => void;
+  debugPoints: { position: [number, number, number]; color: string }[];
+  setDebugPoints: (
+    points: { position: [number, number, number]; color: string }[],
+  ) => void;
 
   // Editor state
   hoverTileId: string | null;
@@ -268,6 +272,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   buddies: [],
   setBuddies: (buddies) => set({ buddies }),
+  debugPoints: [],
+  setDebugPoints: (debugPoints) => set({ debugPoints }),
 
   isEditing: true,
   setIsEditing: (isEditing) => set({ isEditing }),
@@ -582,12 +588,14 @@ export const useGameStore = create<GameStore>((set, get) => ({
       console.log('Game reset! Starting on', { currentTile });
       return {
         level,
-        curveProgress: 0,
+        curveProgress:
+          currentTile.type === 'cap' || currentTile.type === 't' ? 1 : 0,
         currentCurveIndex: 0,
-        enteredFrom: -1,
+        enteredFrom: currentTile.type === 't' ? 0 : -1,
         // TODO: Need a starting connection too!
-        nextConnection: 0,
+        nextConnection: currentTile.type === 'cap' ? 1 : 0,
         playerMomentum: 0,
+        debugPoints: [],
         collectedItems: new Set(),
         gateStates: {},
         tilesComputed,

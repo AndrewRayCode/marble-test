@@ -83,6 +83,7 @@ const Game = () => {
   const [, key] = useKeyboardControls();
 
   const buddies = useGameStore((state) => state.buddies);
+  const debugPoints = useGameStore((state) => state.debugPoints);
   const toggleDebug = useGameStore((state) => state.toggleDebug);
   const resetLevel = useGameStore((state) => state.resetLevel);
   const setScreenArrows = useGameStore((state) => state.setScreenArrows);
@@ -234,7 +235,7 @@ const Game = () => {
       }
 
       // Get the point along the curve
-      const point = currentCurve.getPointAt(progress);
+      let point = currentCurve.getPointAt(progress);
 
       // Update the sphere's position
       marbleRef.current.position.copy(point);
@@ -252,28 +253,118 @@ const Game = () => {
           }
         });
 
+      const collisionDistance = 10.5;
       // Check for switch presses
       level.tiles
-        .filter((t): t is GateTile => t.type === 'gate')
-        .forEach((gate) => {
-          const isNear = point.distanceTo(new Vector3(...gate.position)) < 0.5;
-          const hasBonked = s.enabledBooleanSwitchesFor[-1]?.[gate.id] === true;
-          // Bonk!
-          if (isNear && !hasBonked) {
-            if (s.playerMomentum !== 0) {
-              s.setEnabledBooleanSwitchesFor(-1, gate.id, true);
-              playErrorSfx();
-              setMomentum(0);
-            }
-            // TODO: Need to figure out what direction of travel is allowed
-            if (key().up) {
-              setMomentum(-PLAYER_SPEED);
-            } else if (key().down) {
-              setMomentum(PLAYER_SPEED);
-            }
-          } else if (!isNear && hasBonked) {
-            s.setEnabledBooleanSwitchesFor(-1, gate.id, false);
+        .filter((t): t is GateTile => {
+          if (
+            t.type === 'gate' &&
+            (s.gateStates[t.id] === 'closed' ||
+              (!(t.id in s.gateStates) && t.defaultState === 'closed'))
+          ) {
+            const gp = new Vector3(...t.position);
+            const currentDistance = point.distanceTo(gp);
+            return currentDistance <= collisionDistance;
           }
+          return false;
+        })
+        .forEach((gate) => {
+          const gp = new Vector3(...gate.position);
+          // const nextCheckDelta = 0.05;
+          const ef = s.tilesComputed[currentTile.id]?.exits?.[s.enteredFrom];
+          if (ef && s.playerMomentum !== 0) {
+            const entranceToGate = ef.distanceTo(gp);
+            playErrorSfx();
+            const newProgress = clamp(entranceToGate - collisionDistance, 0, 1);
+            setCurveProgress(newProgress);
+            const newPoint = currentCurve.getPointAt(newProgress);
+            marbleRef.current!.position.copy(point);
+            console.log('bonk!', {
+              currentTile,
+              entranceToGate,
+              newProgress,
+              atDistance: point.distanceTo(gp),
+              curveProgress: s.curveProgress,
+            });
+            setMomentum(0);
+            if (s.debugPoints.length !== 2) {
+              s.setDebugPoints([
+                {
+                  color: 'green',
+                  position: [ef.x, ef.y + 0.01, ef.z],
+                },
+                {
+                  color: 'white',
+                  position: [
+                    gate.position[0],
+                    gate.position[1] - 0.01,
+                    gate.position[2],
+                  ],
+                },
+                {
+                  color: 'black',
+                  position: [newPoint.x, newPoint.y, newPoint.z],
+                },
+                // bonk point
+                {
+                  color: 'yellow',
+                  position: [point.x, point.y, point.z],
+                },
+              ]);
+            }
+            point = newPoint;
+          }
+          // const nextProgress = clamp(
+          //   progress +
+          //     (s.playerMomentum > 0 ? nextCheckDelta : -nextCheckDelta),
+          //   0,
+          //   1,
+          // );
+          // const nextPoint = currentCurve.getPointAt(nextProgress);
+          // const nextDistance = nextPoint.distanceTo(gp);
+          // const percentToSnap =
+          //   (targetSnapDistance - nextDistance) /
+          //   (currentDistance - nextDistance);
+
+          // const newProgress =
+          //   progress + (nextProgress - progress) * percentToSnap;
+
+          // const snappedProgress = clamp(newProgress, 0, 1);
+
+          // setCurveProgress(snappedProgress);
+          // point = currentCurve.getPointAt(snappedProgress);
+          // marbleRef.current!.position.copy(point);
+          // if (s.debugPoints.length !== 2) {
+          //   s.setDebugPoints([
+          //     {
+          //       color: 'green',
+          //       position: [point.x, point.y + 0.01, point.z],
+          //     },
+          //     {
+          //       color: 'white',
+          //       position: [nextPoint.x, nextPoint.y - 0.01, nextPoint.z],
+          //     },
+          //   ]);
+          // }
+
+          // const hasBonked =
+          //   s.enabledBooleanSwitchesFor[-1]?.[gate.id] === true;
+          // // Bonk!
+          // if (isNear && !hasBonked) {
+          //   if (s.playerMomentum !== 0) {
+          //     s.setEnabledBooleanSwitchesFor(-1, gate.id, true);
+          //     playErrorSfx();
+          //     setMomentum(0);
+          //   }
+          //   // TODO: Need to figure out what direction of travel is allowed
+          //   if (key().up) {
+          //     setMomentum(-PLAYER_SPEED);
+          //   } else if (key().down) {
+          //     setMomentum(PLAYER_SPEED);
+          //   }
+          // } else if (!isNear && hasBonked) {
+          //   s.setEnabledBooleanSwitchesFor(-1, gate.id, false);
+          // }
         });
 
       // Check for switch presses
@@ -474,8 +565,9 @@ const Game = () => {
 
       {/* Player */}
       <mesh ref={marbleRef}>
-        <sphereGeometry args={[SPHERE_RADIUS, 256, 256]} />
+        <sphereGeometry args={[SPHERE_RADIUS, 128, 128]} />
         <meshStandardMaterial
+          wireframe
           metalness={0.4}
           roughness={0.01}
           envMapIntensity={0.5}
@@ -483,6 +575,12 @@ const Game = () => {
         />
       </mesh>
 
+      {debugPoints.map((point, i) => (
+        <mesh key={i} position={point.position}>
+          <sphereGeometry args={[0.1, 16, 16]} />
+          <meshStandardMaterial color={point.color} />
+        </mesh>
+      ))}
       {debug &&
         buddies.map(([b1, b2], i) => (
           <group key={i}>
@@ -551,12 +649,14 @@ const Game = () => {
         level &&
         level.tiles.map((tile) => (
           <group key={tile.id}>
-            <Html
-              className={cx('bg-slate-900 idOverlay')}
-              position={tile.position}
-            >
-              {tile.id}
-            </Html>
+            {tile.type !== 'box' && (
+              <Html
+                className={cx('bg-slate-900 idOverlay')}
+                position={tile.position}
+              >
+                {tile.id}
+              </Html>
+            )}
             {isRailTile(tile) ? (
               <mesh>
                 <tubeGeometry

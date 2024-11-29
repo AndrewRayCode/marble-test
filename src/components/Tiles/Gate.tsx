@@ -35,7 +35,7 @@ const Gate = ({
       visible={visible === undefined ? true : visible}
     >
       <mesh>
-        <boxGeometry args={[0.25, 0.25, 0.25]} />
+        <boxGeometry args={[0.1, 0.1, 0.1]} />
         <meshBasicMaterial
           color={gateState === 'closed' ? 'red' : 'green'}
           opacity={matOpacity}
