@@ -20,6 +20,7 @@ export const EditorUI = ({
   const selectedTileId = useGameStore((state) => state.selectedTileId);
   const createLevel = useGameStore((state) => state.createLevel);
   const saveLevel = useGameStore((state) => state.saveLevel);
+  const deleteLevel = useGameStore((state) => state.deleteLevel);
   const updateCurrentLevel = useGameStore((state) => state.updateCurrentLevel);
   const setCurrentLevelId = useGameStore((state) => state.setCurrentLevelId);
 
@@ -74,7 +75,7 @@ export const EditorUI = ({
           </div>
         )}
         <div
-          className={cx(styles.toolbarButton, styles.keyboard, 'bg-gray-700', {
+          className={cx(styles.toolbarButton, styles.keyboard, {
             [styles.selected]: showCursor,
           })}
           onClick={(e) => {
@@ -87,14 +88,9 @@ export const EditorUI = ({
         </div>
         {showCursor && [
           <div
-            className={cx(
-              styles.toolbarButton,
-              styles.keyboard,
-              'bg-gray-700',
-              {
-                [styles.selected]: createType === 't',
-              },
-            )}
+            className={cx(styles.toolbarButton, styles.keyboard, {
+              [styles.selected]: createType === 't',
+            })}
             key="jnct"
             onClick={(e) => {
               e.stopPropagation();
@@ -105,14 +101,9 @@ export const EditorUI = ({
             <div className="key">j</div> <div>Junction</div>
           </div>,
           <div
-            className={cx(
-              styles.toolbarButton,
-              styles.keyboard,
-              'bg-gray-700',
-              {
-                [styles.selected]: createType === 'straight',
-              },
-            )}
+            className={cx(styles.toolbarButton, styles.keyboard, {
+              [styles.selected]: createType === 'straight',
+            })}
             key="str8"
             onClick={(e) => {
               e.stopPropagation();
@@ -123,14 +114,9 @@ export const EditorUI = ({
             <div className="key">g</div> <div>Straight</div>
           </div>,
           <div
-            className={cx(
-              styles.toolbarButton,
-              styles.keyboard,
-              'bg-gray-700',
-              {
-                [styles.selected]: createType === 'quarter',
-              },
-            )}
+            className={cx(styles.toolbarButton, styles.keyboard, {
+              [styles.selected]: createType === 'quarter',
+            })}
             key="qrtr"
             onClick={(e) => {
               e.stopPropagation();
@@ -141,14 +127,9 @@ export const EditorUI = ({
             <div className="key">q</div> <div>Turn</div>
           </div>,
           <div
-            className={cx(
-              styles.toolbarButton,
-              styles.keyboard,
-              'bg-gray-700',
-              {
-                [styles.selected]: createType === 'button',
-              },
-            )}
+            className={cx(styles.toolbarButton, styles.keyboard, {
+              [styles.selected]: createType === 'button',
+            })}
             key="btn"
             onClick={(e) => {
               e.stopPropagation();
@@ -159,7 +140,7 @@ export const EditorUI = ({
             <div className="key">b</div> <div>Button</div>
           </div>,
           <div
-            className={cx(styles.toolbarButton, 'bg-gray-700', {
+            className={cx(styles.toolbarButton, {
               [styles.selected]: createType === 'box',
             })}
             key="box"
@@ -172,7 +153,7 @@ export const EditorUI = ({
             <div>Box</div>
           </div>,
           <div
-            className={cx(styles.toolbarButton, 'bg-gray-700', {
+            className={cx(styles.toolbarButton, {
               [styles.selected]: createType === 'sphere',
             })}
             key="sphr"
@@ -185,7 +166,7 @@ export const EditorUI = ({
             <div>Sphere</div>
           </div>,
           <div
-            className={cx(styles.toolbarButton, 'bg-gray-700', {
+            className={cx(styles.toolbarButton, {
               [styles.selected]: createType === 'coin',
             })}
             key="coin"
@@ -198,7 +179,7 @@ export const EditorUI = ({
             <div>Coin</div>
           </div>,
           <div
-            className={cx(styles.toolbarButton, 'bg-gray-700', {
+            className={cx(styles.toolbarButton, {
               [styles.selected]: createType === 'gate',
             })}
             key="gat"
@@ -220,7 +201,7 @@ export const EditorUI = ({
           display: enabled ? '' : 'none',
         }}
       >
-        <div className="mb-3">
+        <div className="mb-3 border-solid border-2 p-2 rounded-lg border-slate-600">
           <label className="mb-1 block">Select Level</label>
           <div className="grid grid-cols-[1fr_max-content] grid-cols-2 gap-2">
             <div>
@@ -242,9 +223,7 @@ export const EditorUI = ({
             </div>
             <div>
               <div
-                className={cx(styles.toolbarButton, 'block bg-gray-700', {
-                  [styles.selected]: showCursor,
-                })}
+                className={cx(styles.toolbarButton, 'block')}
                 onClick={async (e) => {
                   e.stopPropagation();
                   e.preventDefault();
@@ -261,9 +240,9 @@ export const EditorUI = ({
             </div>
           </div>
         </div>
-        <div className="mb-3">
+        <div className="mb-3 border-solid border-2 p-2 rounded-lg border-slate-600">
           <label className="mb-1 block">Level Name</label>
-          <div className="grid grid-cols-[1fr_max-content] grid-cols-2 gap-2">
+          <div className="grid grid-cols-[1fr_max-content_max-content] grid-cols-2 gap-2">
             <div>
               <input
                 className={cx(styles.input, 'mb-2 w-full')}
@@ -277,7 +256,7 @@ export const EditorUI = ({
             </div>
             <div>
               <button
-                className={cx(styles.toolbarButton, 'block bg-gray-700')}
+                className={cx(styles.toolbarButton, 'block')}
                 disabled={!level}
                 onClick={async (e) => {
                   e.stopPropagation();
@@ -286,6 +265,25 @@ export const EditorUI = ({
                 }}
               >
                 Save
+              </button>
+            </div>
+            <div>
+              <button
+                className={cx(
+                  styles.toolbarButton,
+                  styles.destructive,
+                  'block',
+                )}
+                disabled={!level || !level.id}
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  if (confirm('Are you sure you want to delete this level?')) {
+                    await deleteLevel(level!.id!);
+                  }
+                }}
+              >
+                x
               </button>
             </div>
           </div>

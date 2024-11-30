@@ -43,10 +43,10 @@ body {
   font: bold 9pt arial;
   text-decoration: none;
   text-align: center;
-  width: 34px;
-  height: 31px;
+  width: 24px;
+  height: 21px;
   background: #222;
-  padding: 8px 0 0;
+  padding: 2px 0 0;
   /* bump it around because shadow creates illusion it's raised */
   margin-top: -1px;
   margin-bottom: 1px;
