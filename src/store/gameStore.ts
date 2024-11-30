@@ -591,9 +591,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         curveProgress:
           currentTile.type === 'cap' || currentTile.type === 't' ? 1 : 0,
         currentCurveIndex: 0,
-        enteredFrom: currentTile.type === 't' ? 0 : -1,
+        enteredFrom: currentTile.type === 't' ? -1 : 0,
         // TODO: Need a starting connection too!
-        nextConnection: currentTile.type === 'cap' ? 1 : 0,
+        nextConnection: -1,
         playerMomentum: 0,
         debugPoints: [],
         collectedItems: new Set(),

@@ -19,6 +19,8 @@ import {
   INITIAL_SPHERE_RADIUS,
   PLAYER_SPEED,
   SPHERE_RADIUS,
+  TILE_HALF_WIDTH,
+  TILE_WIDTH,
 } from '@/game/constants';
 import {
   isRailTile,
@@ -49,7 +51,7 @@ import EditorUI from './Editor/EditorUI';
 import Cap from './Tiles/Cap';
 import Box from './Tiles/Box';
 import Coin from './Tiles/Coin';
-import Gate from './Tiles/Gate';
+import Gate, { GATE_DEPTH } from './Tiles/Gate';
 
 const lowest = (a: {
   left: number;
@@ -210,7 +212,7 @@ const Game = () => {
       return;
     }
 
-    const progress = clamp(
+    let progress = clamp(
       s.curveProgress +
         s.playerMomentum *
           delta *
@@ -253,7 +255,7 @@ const Game = () => {
           }
         });
 
-      const collisionDistance = 10.5;
+      const collisionDistance = SPHERE_RADIUS + GATE_DEPTH / 2;
       // Check for switch presses
       level.tiles
         .filter((t): t is GateTile => {
@@ -270,101 +272,49 @@ const Game = () => {
         })
         .forEach((gate) => {
           const gp = new Vector3(...gate.position);
-          // const nextCheckDelta = 0.05;
-          const ef = s.tilesComputed[currentTile.id]?.exits?.[s.enteredFrom];
-          if (ef && s.playerMomentum !== 0) {
-            const entranceToGate = ef.distanceTo(gp);
-            playErrorSfx();
-            const newProgress = clamp(entranceToGate - collisionDistance, 0, 1);
-            setCurveProgress(newProgress);
-            const newPoint = currentCurve.getPointAt(newProgress);
-            marbleRef.current!.position.copy(point);
-            console.log('bonk!', {
-              currentTile,
-              entranceToGate,
-              newProgress,
-              atDistance: point.distanceTo(gp),
-              curveProgress: s.curveProgress,
-            });
-            setMomentum(0);
-            if (s.debugPoints.length !== 2) {
-              s.setDebugPoints([
-                {
-                  color: 'green',
-                  position: [ef.x, ef.y + 0.01, ef.z],
-                },
-                {
-                  color: 'white',
-                  position: [
-                    gate.position[0],
-                    gate.position[1] - 0.01,
-                    gate.position[2],
-                  ],
-                },
-                {
-                  color: 'black',
-                  position: [newPoint.x, newPoint.y, newPoint.z],
-                },
-                // bonk point
-                {
-                  color: 'yellow',
-                  position: [point.x, point.y, point.z],
-                },
-              ]);
-            }
-            point = newPoint;
+          let ef = s.tilesComputed[currentTile.id]?.exits?.[s.enteredFrom];
+
+          // If this is a T junction and we came from the middle, the exited
+          // from tile won't have a position, so set it to the middle of the T
+          if (currentTile.type === 't' && s.enteredFrom === -1) {
+            ef = s.tilesComputed[currentTile.id]?.curves[0].getPointAt(1);
           }
-          // const nextProgress = clamp(
-          //   progress +
-          //     (s.playerMomentum > 0 ? nextCheckDelta : -nextCheckDelta),
-          //   0,
-          //   1,
-          // );
-          // const nextPoint = currentCurve.getPointAt(nextProgress);
-          // const nextDistance = nextPoint.distanceTo(gp);
-          // const percentToSnap =
-          //   (targetSnapDistance - nextDistance) /
-          //   (currentDistance - nextDistance);
 
-          // const newProgress =
-          //   progress + (nextProgress - progress) * percentToSnap;
+          if (ef && s.playerMomentum !== 0) {
+            playErrorSfx();
+            const entranceToGate = ef.distanceTo(gp);
 
-          // const snappedProgress = clamp(newProgress, 0, 1);
+            let newProgress = progress;
 
-          // setCurveProgress(snappedProgress);
-          // point = currentCurve.getPointAt(snappedProgress);
-          // marbleRef.current!.position.copy(point);
-          // if (s.debugPoints.length !== 2) {
-          //   s.setDebugPoints([
-          //     {
-          //       color: 'green',
-          //       position: [point.x, point.y + 0.01, point.z],
-          //     },
-          //     {
-          //       color: 'white',
-          //       position: [nextPoint.x, nextPoint.y - 0.01, nextPoint.z],
-          //     },
-          //   ]);
-          // }
+            if (currentTile.type === 't') {
+              // Figure out how much along this curve we need to go, and then
+              // double it, because T junction tiles are only half width!
+              const progressToSnapTo = (TILE_WIDTH - collisionDistance) * 2.0;
+              // Then reverse it again, because if we are leaving a T, we are
+              // travelling in the negative direction, so the point on the
+              // curve we want to bonk at is inverted
+              newProgress = clamp(TILE_WIDTH - progressToSnapTo, 0, 1);
+            } else {
+              // Otherwise, take the entrance to the gate, and go back the
+              // collision distance, to determine snap position. Negate it if
+              // going negative direction.
+              const snappedDistance = entranceToGate - collisionDistance;
+              newProgress = clamp(
+                s.playerMomentum < 0
+                  ? TILE_WIDTH - snappedDistance
+                  : snappedDistance,
+                0,
+                1,
+              );
+            }
 
-          // const hasBonked =
-          //   s.enabledBooleanSwitchesFor[-1]?.[gate.id] === true;
-          // // Bonk!
-          // if (isNear && !hasBonked) {
-          //   if (s.playerMomentum !== 0) {
-          //     s.setEnabledBooleanSwitchesFor(-1, gate.id, true);
-          //     playErrorSfx();
-          //     setMomentum(0);
-          //   }
-          //   // TODO: Need to figure out what direction of travel is allowed
-          //   if (key().up) {
-          //     setMomentum(-PLAYER_SPEED);
-          //   } else if (key().down) {
-          //     setMomentum(PLAYER_SPEED);
-          //   }
-          // } else if (!isNear && hasBonked) {
-          //   s.setEnabledBooleanSwitchesFor(-1, gate.id, false);
-          // }
+            const newPoint = currentCurve.getPointAt(newProgress);
+            setMomentum(0);
+            point = newPoint;
+            marbleRef.current!.position.copy(point);
+            progress = newProgress;
+            setCurveProgress(newProgress);
+          }
         });
 
       // Check for switch presses
