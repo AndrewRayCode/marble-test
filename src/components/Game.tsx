@@ -53,6 +53,7 @@ import Box from './Tiles/Box';
 import Coin from './Tiles/Coin';
 import Gate, { GATE_DEPTH } from './Tiles/Gate';
 import Sphere from './Tiles/Sphere';
+import Group from './Tiles/Group';
 
 const lowest = (a: {
   left: number;
@@ -594,33 +595,37 @@ const Game = () => {
       <OnScreenArrows />
 
       {level &&
-        level.tiles.map((tile) => {
-          if (tile.type === 'straight') {
-            return <Straightaway key={tile.id} tile={tile} />;
-          } else if (tile.type === 'quarter') {
-            return <QuarterTurn key={tile.id} tile={tile} />;
-          } else if (tile.type === 't') {
-            return <Junction key={tile.id} tile={tile} />;
-          } else if (tile.type === 'button') {
-            return <Toggle key={tile.id} tile={tile} />;
-          } else if (tile.type === 'cap') {
-            return <Cap key={tile.id} tile={tile} />;
-          } else if (tile.type === 'box') {
-            return <Box key={tile.id} tile={tile} />;
-          } else if (tile.type === 'sphere') {
-            return <Sphere key={tile.id} tile={tile} />;
-          } else if (tile.type === 'coin') {
-            return (
-              <Coin
-                key={tile.id}
-                tile={tile}
-                visible={!collectedItems.has(tile.id)}
-              />
-            );
-          } else if (tile.type === 'gate') {
-            return <Gate key={tile.id} tile={tile} />;
-          }
-        })}
+        level.tiles
+          .filter((t) => t.parentId === undefined || t.parentId === null)
+          .map((tile) => {
+            if (tile.type === 'group') {
+              return <Group key={tile.id} tile={tile} />;
+            } else if (tile.type === 'straight') {
+              return <Straightaway key={tile.id} tile={tile} />;
+            } else if (tile.type === 'quarter') {
+              return <QuarterTurn key={tile.id} tile={tile} />;
+            } else if (tile.type === 't') {
+              return <Junction key={tile.id} tile={tile} />;
+            } else if (tile.type === 'button') {
+              return <Toggle key={tile.id} tile={tile} />;
+            } else if (tile.type === 'cap') {
+              return <Cap key={tile.id} tile={tile} />;
+            } else if (tile.type === 'box') {
+              return <Box key={tile.id} tile={tile} />;
+            } else if (tile.type === 'sphere') {
+              return <Sphere key={tile.id} tile={tile} />;
+            } else if (tile.type === 'coin') {
+              return (
+                <Coin
+                  key={tile.id}
+                  tile={tile}
+                  visible={!collectedItems.has(tile.id)}
+                />
+              );
+            } else if (tile.type === 'gate') {
+              return <Gate key={tile.id} tile={tile} />;
+            }
+          })}
 
       {isEditing && (
         <EditorComponent

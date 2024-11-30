@@ -48,6 +48,7 @@ export type TileBase = {
   position: [number, number, number];
   rotation: [number, number, number];
   scale?: [number, number, number];
+  parentId: string | null;
   type: string;
 };
 
@@ -83,6 +84,10 @@ export type CapTile = TileBase & {
   showSides: Side;
   connections: [NullStr];
   entrances: [NullNum];
+};
+
+export type GroupTile = TileBase & {
+  type: 'group';
 };
 
 export type BoxTile = TileBase & {
@@ -129,6 +134,7 @@ export type Tile =
   | TrackTile
   | ButtonTile
   | BoxTile
+  | GroupTile
   | SphereTile
   | CoinTile
   | GateTile;
@@ -175,6 +181,8 @@ export interface GameStore {
   setIsEditing: (isEditing: boolean) => void;
   addTile: (tile: Tile) => void;
   deleteTile: (tileId: string) => void;
+  groupTile: (tileId: string, parentId: string) => void;
+  ungroupTile: (tileId: string) => void;
   updateTileAction: <T extends Action>(
     tileId: string,
     actionIdx: number,
@@ -316,12 +324,75 @@ export const useGameStore = create<GameStore>((set, get) => ({
   deleteTile: (tileId: string) => {
     const s = get();
     const level = s.levels.find((l) => l.id === s.currentLevelId)!;
+    const tile = level.tiles.find((t) => t.id === tileId);
     const tilesComputed = { ...s.tilesComputed };
     delete tilesComputed[tileId];
     s.setTilesComputed(tilesComputed);
     s.updateCurrentLevel({
-      tiles: level.tiles.filter((tile) => tile.id !== tileId),
+      tiles: level.tiles
+        .filter((tile) => tile.id !== tileId)
+        .map((tile) => {
+          {
+            if (tile.parentId === tileId) {
+              return {
+                ...tile,
+                position: [
+                  tile.position[0] + tile.position[0],
+                  tile.position[1] + tile.position[1],
+                  tile.position[2] + tile.position[2],
+                ],
+                parentId: null,
+              };
+            }
+            return tile;
+          }
+        }),
     });
+  },
+  groupTile: (tileId, parentId) => {
+    const s = get();
+    const level = s.levels.find((l) => l.id === s.currentLevelId)!;
+    const parent = level.tiles.find(
+      (tile) => tile.id === parentId,
+    ) as GroupTile;
+    const tiles = level.tiles.map((tile) => {
+      if (tile.id === tileId) {
+        // add the child to the parent, but keep the child's world position, so
+        // subtract the group's position
+        return {
+          ...tile,
+          parentId,
+          position: [
+            tile.position[0] - parent.position[0],
+            tile.position[1] - parent.position[1],
+            tile.position[2] - parent.position[2],
+          ],
+        } as Tile;
+      }
+      return tile;
+    });
+    s.updateCurrentLevel({ tiles });
+  },
+  ungroupTile: (tileId) => {
+    const s = get();
+    const level = s.levels.find((l) => l.id === s.currentLevelId)!;
+    const tile = level.tiles.find((t) => t.id === tileId)!;
+    const group = level.tiles.find((t) => t.id === tile.parentId) as GroupTile;
+    const tiles = level.tiles.map((tile) => {
+      if (tile.id === tileId) {
+        return {
+          ...tile,
+          parentId: null,
+          position: [
+            tile.position[0] + group.position[0],
+            tile.position[1] + group.position[1],
+            tile.position[2] + group.position[2],
+          ],
+        } as Tile;
+      }
+      return tile;
+    });
+    s.updateCurrentLevel({ tiles });
   },
   updateTileAction: (tileId, actionIdx, action) => {
     const s = get();
@@ -495,12 +566,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
           rotation,
         };
 
-        const updatedComputed = {
-          ...s.tilesComputed,
-          [targetId]: computeTrackTile(target as RailTile, transform),
-        };
+        let updatedComputed = s.tilesComputed;
 
-        s.setTilesComputed(updatedComputed);
+        if (isRailTile(target) || isJunctionTile(target)) {
+          updatedComputed = {
+            ...s.tilesComputed,
+            [targetId]: computeTrackTile(target as RailTile, transform),
+          };
+          s.setTilesComputed(updatedComputed);
+        }
         s.setTransform(targetId, transform);
         // If a transform applies rotation, re-snap the updated positions. Note
         // right now this does not wait for any springs to come to rest, it

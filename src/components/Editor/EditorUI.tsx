@@ -160,6 +160,19 @@ export const EditorUI = ({
           </div>,
           <div
             className={cx(styles.toolbarButton, 'bg-gray-700', {
+              [styles.selected]: createType === 'group',
+            })}
+            key="grp"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setCreateType('group');
+            }}
+          >
+            <div>Group</div>
+          </div>,
+          <div
+            className={cx(styles.toolbarButton, 'bg-gray-700', {
               [styles.selected]: createType === 'box',
             })}
             key="box"
