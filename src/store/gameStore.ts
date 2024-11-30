@@ -325,7 +325,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const s = get();
     const level = s.levels.find((l) => l.id === s.currentLevelId)!;
     if (isRailTile(tile) || isJunctionTile(tile)) {
-      s.setTileComputed(tile.id, computeTrackTile(tile));
+      s.setTileComputed(tile.id, computeTrackTile(tile, null, null, null));
     }
     s.updateCurrentLevel({ tiles: [...level.tiles, tile] });
   },
@@ -365,7 +365,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     ) as GroupTile;
     const tiles = level.tiles.map((tile) => {
       if (tile.id === tileId) {
-        // add the child to the parent, but keep the child's world position, so
+        // add the child to the parent, but to keep the child's world position,
         // subtract the group's position
         return {
           ...tile,
@@ -432,7 +432,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
       tileId === tile.id ? updated : tile,
     );
     if (isRailTile(updated) || isJunctionTile(updated)) {
-      s.setTileComputed(updated.id, computeTrackTile(updated));
+      s.setTileComputed(
+        updated.id,
+        computeTrackTile(
+          updated,
+          s.transforms[updated.id],
+          level.tiles.find((t): t is GroupTile => t.id === updated.parentId!) ||
+            null,
+          s.transforms[updated.parentId!] || null,
+        ),
+      );
     }
     s.updateCurrentLevel({ tiles });
   },
@@ -579,10 +588,35 @@ export const useGameStore = create<GameStore>((set, get) => ({
         if (isRailTile(target) || isJunctionTile(target)) {
           updatedComputed = {
             ...s.tilesComputed,
-            [targetId]: computeTrackTile(target as RailTile, transform),
+            [targetId]: computeTrackTile(
+              target as RailTile,
+              transform,
+              // Button targeting a tile in a group is not currently supported
+              null,
+              null,
+            ),
           };
-          s.setTilesComputed(updatedComputed);
+        } else if (target.type === 'group') {
+          const tilesToUpdate = level.tiles.filter(
+            (t) => t.parentId === targetId,
+          );
+          const groupTile = target as GroupTile;
+          updatedComputed = tilesToUpdate.reduce(
+            (acc, tile) => ({
+              ...acc,
+              [tile.id]: computeTrackTile(
+                tile as RailTile,
+                // original tile transform, if any, probably shouldn't be any since it's in a group!
+                s.transforms[tile.id],
+                groupTile,
+                // The updated group transform
+                transform,
+              ),
+            }),
+            s.tilesComputed,
+          );
         }
+        s.setTilesComputed(updatedComputed);
         s.setTransform(targetId, transform);
         // If a transform applies rotation, re-snap the updated positions. Note
         // right now this does not wait for any springs to come to rest, it
@@ -683,13 +717,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       const level = state.levels.find((l) => l.id === state.currentLevelId)!;
       const tilesComputed = level.tiles.reduce<Record<string, TileComputed>>(
-        (acc, tile) =>
-          isRailTile(tile) || isJunctionTile(tile)
+        (acc, tile) => {
+          const parentTile =
+            level.tiles.find((t): t is GroupTile => t.id === tile.parentId) ||
+            null;
+          return isRailTile(tile) || isJunctionTile(tile)
             ? {
                 ...acc,
-                [tile.id]: computeTrackTile(tile),
+                [tile.id]: computeTrackTile(tile, null, parentTile, null),
               }
-            : acc,
+            : acc;
+        },
         {},
       );
 

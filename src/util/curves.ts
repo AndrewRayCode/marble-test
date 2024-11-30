@@ -1,4 +1,5 @@
 import {
+  GroupTile,
   JunctionTile,
   TileComputed,
   TrackTile,
@@ -11,7 +12,9 @@ import {
   CatmullRomCurve3,
   CubicBezierCurve3,
   Euler,
+  Group,
   Matrix4,
+  Quaternion,
   Vector3,
 } from 'three';
 import { INITIAL_SPHERE_RADIUS, TILE_HALF_WIDTH } from '../game/constants';
@@ -75,8 +78,11 @@ export const useCurve = (curve: CubicBezierCurve3) => {
   }, [curve]);
 };
 
-export const curveForRailTile = (tile: TrackTile, transform?: Transform) => {
-  const rotation = transform?.rotation || tile.rotation;
+export const curveForRailTile = (
+  tile: TrackTile,
+  position: [number, number, number],
+  rotation: [number, number, number],
+) => {
   return translateCurve(
     rotateBezierCurve(
       tile.type === 'straight'
@@ -87,31 +93,23 @@ export const curveForRailTile = (tile: TrackTile, transform?: Transform) => {
       new Euler(rotation[0], rotation[1], rotation[2]),
       new Vector3(0, TILE_HALF_WIDTH, 0),
     ),
-    new Vector3(
-      tile.position[0],
-      tile.position[1] - TILE_HALF_WIDTH,
-      tile.position[2],
-    ),
+    new Vector3(position[0], position[1] - TILE_HALF_WIDTH, position[2]),
   );
 };
 
 export const curveForChoiceTile = (
   tile: JunctionTile,
   entrance: number,
-  transform?: Transform,
+  position: [number, number, number],
+  rotation: [number, number, number],
 ) => {
-  const rotation = transform?.rotation || tile.rotation;
   return translateCurve(
     rotateBezierCurve(
       tile.type === 't' ? tStraights[entrance] : tStraights[entrance],
       new Euler(rotation[0], rotation[1], rotation[2]),
       new Vector3(0, TILE_HALF_WIDTH, 0),
     ),
-    new Vector3(
-      tile.position[0],
-      tile.position[1] - TILE_HALF_WIDTH,
-      tile.position[2],
-    ),
+    new Vector3(position[0], position[1] - TILE_HALF_WIDTH, position[2]),
   );
 };
 
@@ -230,26 +228,162 @@ export const tStraights = [
 // Generate the computed / runtime data for this tile
 export const computeTrackTile = (
   tile: TrackTile,
-  transform?: Transform,
+  transform: Transform | null,
+  parentTile: GroupTile | null,
+  parentTransform: Transform | null,
 ): TileComputed => {
+  let position = transform?.position || tile.position;
+  let rotation = transform?.rotation || tile.rotation;
+
+  if (parentTile) {
+    const [xposition, xrotation] = applyParentTransformation(
+      position,
+      rotation,
+      parentTile,
+      parentTransform,
+    );
+    if (
+      position[0] === xposition[0] &&
+      position[1] === xposition[1] &&
+      position[2] === xposition[2]
+    ) {
+      console.log('no pos change to tile', tile);
+    } else {
+      console.log('✅ pos change applied to tile', tile);
+    }
+    if (
+      rotation[0] === xrotation[0] &&
+      rotation[1] === xrotation[1] &&
+      rotation[2] === xrotation[2]
+    ) {
+      console.log('no rotation change to tile', tile, { transform });
+    } else {
+      console.log('✅ rot change applied to tile', tile);
+    }
+    position = xposition;
+    rotation = xrotation;
+  }
+
   if (tile.type === 'cap') {
-    const curve = curveForRailTile(tile, transform);
+    const curve = curveForRailTile(tile, position, rotation);
     return {
       curves: [curve],
       exits: [curve.getPointAt(0)],
     };
   } else if (isRailTile(tile)) {
-    const curve = curveForRailTile(tile, transform);
+    const curve = curveForRailTile(tile, position, rotation);
     return {
       curves: [curve],
       exits: [curve.getPointAt(0), curve.getPointAt(1)],
     };
   } else if (isJunctionTile(tile)) {
-    const curves = [0, 1, 2].map((i) => curveForChoiceTile(tile, i, transform));
+    const curves = [0, 1, 2].map((i) =>
+      curveForChoiceTile(tile, i, position, rotation),
+    );
     return {
       curves,
       exits: curves.map((c) => c.getPointAt(0)),
     };
   }
   throw new Error('Toilet Bloing!');
+};
+
+export const applyParentTransformation = (
+  position: [number, number, number],
+  rotation: [number, number, number],
+  parentTile: GroupTile,
+  parentTransform: Transform | null,
+) => {
+  const group = new Group();
+  group.position.copy(new Vector3(...parentTile.position));
+  group.updateMatrixWorld();
+  group.updateWorldMatrix(true, true);
+  group.updateMatrix();
+  // Group initial rotation is not supported
+
+  const objectPositionInWorldSpace = new Vector3(
+    // Might need to consider transform here as well?
+    position[0] + parentTile.position[0],
+    position[1] + parentTile.position[1],
+    position[2] + parentTile.position[2],
+  );
+  const op = new Vector3(...position);
+  const child = new Group();
+  child.rotation.copy(new Euler(...rotation));
+  child.position.copy(new Vector3(...objectPositionInWorldSpace));
+  child.position.copy(new Vector3(...op));
+  group.add(child);
+
+  // Transform the group
+  group.rotation.copy(new Euler(...(parentTransform?.rotation || [0, 0, 0])));
+  // group.position.copy(new Vector3(...(parentTransform.position || [0, 0, 0])));
+  group.updateMatrixWorld();
+  group.updateWorldMatrix(true, true);
+  group.updateMatrix();
+
+  const wp = new Vector3();
+  const wq = new Quaternion();
+  child.getWorldPosition(wp);
+  child.getWorldQuaternion(wq);
+  const eu = new Euler();
+  eu.setFromQuaternion(wq);
+  const out = wp.toArray();
+  const translated = [
+    wp.x - parentTile.position[0],
+    wp.y - parentTile.position[1],
+    wp.z - parentTile.position[2],
+  ] as [number, number, number];
+  return [out, [eu.x, eu.y, eu.z] as [number, number, number]];
+
+  // const gp = parentTransform.position || [0, 0, 0];
+  // const gr = parentTransform.rotation || [0, 0, 0];
+
+  // // Unshift the object by the group position, since the object position is
+  // // already offset by the group position
+  // // const objPositionInGroupSpace = new Vector3(
+  // //   position[0] + parentTile.position[0],
+  // //   position[1] + parentTile.position[1],
+  // //   position[2] + parentTile.position[2],
+  // // );
+  // // const objPosition = new Vector3(...parentTile.position);
+  // const objRotation = new Euler(...rotation);
+
+  // const groupPosition = new Vector3(...gp);
+  // const groupRotation = new Euler(...gr);
+  // console.log('translating', { groupPosition, groupRotation });
+
+  // // Create a matrix for the group's transformation
+  // const groupMatrix = new Matrix4();
+  // groupMatrix.compose(
+  //   groupPosition,
+  //   new Quaternion().setFromEuler(groupRotation),
+  //   new Vector3(1, 1, 1), // scale, usually (1,1,1) unless you're scaling
+  // );
+
+  // // Create a matrix for the object
+  // const objMatrix = new Matrix4();
+  // objMatrix.compose(
+  //   objPositionInGroupSpace,
+  //   new Quaternion().setFromEuler(objRotation),
+  //   new Vector3(1, 1, 1),
+  // );
+
+  // // Multiply the matrices to get the world transform
+  // const worldMatrix = groupMatrix.multiply(objMatrix);
+
+  // // Extract world position and rotation
+  // const worldPosition = new Vector3();
+  // const worldRotation = new Euler();
+  // worldMatrix.decompose(worldPosition, new Quaternion(), new Vector3());
+  // worldRotation.setFromRotationMatrix(worldMatrix);
+
+  // return [
+  //   // Transform back to world space
+  //   [
+  //     worldPosition.x - parentTile.position[0],
+  //     worldPosition.y - parentTile.position[1],
+  //     worldPosition.z - parentTile.position[2],
+  //   ] as [number, number, number],
+  //   worldRotation.toArray() as [number, number, number],
+  // ];
 };

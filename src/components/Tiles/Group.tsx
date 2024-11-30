@@ -39,6 +39,7 @@ const Group = ({ tile, opacity }: { tile: GroupTile; opacity?: number }) => {
       friction: 26,
     },
   });
+  console.log({ meshPosition });
 
   const children = level!.tiles.filter((t) => t.parentId === tile.id);
 
