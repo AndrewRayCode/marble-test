@@ -40,6 +40,8 @@ import coinSfx from '@/public/coin.mp3';
 import moneySfx from '@/public/money.mp3';
 import errorSfx from '@/public/error.mp3';
 import successSfx from '@/public/success.mp3';
+import metalSfx from '@/public/metal-hit-17.mp3';
+import metal2Sfx from '@/public/metal-hit-40.mp3';
 
 import cx from 'classnames';
 import Toggle from './Tiles/Toggle';
@@ -152,6 +154,8 @@ const Game = () => {
   const [playMoneySfx] = useSound(moneySfx, { volume: 1 });
   const [playErrorSfx] = useSound(errorSfx, { volume: 1 });
   const [playSuccessSfx] = useSound(successSfx, { volume: 1 });
+  const [playMetalHitSfx] = useSound(metalSfx, { volume: 0.1 });
+  const [playMetalHit2Sfx] = useSound(metal2Sfx, { volume: 0.05 });
 
   // Start game :(
   useEffect(() => {
@@ -429,6 +433,10 @@ const Game = () => {
             setNextConnection(0);
             setMomentum(-PLAYER_SPEED);
             setCurveProgress(1.0);
+          } else if (s.playerMomentum !== 0) {
+            setMomentum(0);
+            playMetalHitSfx();
+            playMetalHit2Sfx();
           }
         } else if (currentTile.type == 't') {
           // We are going towards, and have landed on, the center
@@ -465,6 +473,10 @@ const Game = () => {
               // We are at the t junction, we came from the bottom, and no keys
               // were pressed, so stop!
             } else if (s.playerMomentum !== 0) {
+              if (s.enteredFrom === 1) {
+                playMetalHitSfx();
+                playMetalHit2Sfx();
+              }
               setMomentum(0);
             }
             // We are getting the hell out of here
@@ -785,9 +797,9 @@ export default function ThreeScene({ dbLevels }: GameProps) {
       >
         <EditorUI enabled={isEditing}>
           <Canvas
-            orthographic
-            // camera={{ position: [0, 0, 5] }}
-            camera={{ zoom: 50, position: [0, 0, 100] }}
+            // orthographic
+            // camera={{ zoom: 50, position: [0, 0, 100] }}
+            camera={{ position: [0, 0, 5] }}
             className="h-full w-full"
           >
             <Game />

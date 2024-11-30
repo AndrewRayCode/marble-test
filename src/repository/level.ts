@@ -17,3 +17,7 @@ export const upsertLevel = async (level: Level) => {
     create: toSave,
   });
 };
+
+export const deleteLevel = async (id: string) => {
+  return await db.level.delete({ where: { id } });
+};

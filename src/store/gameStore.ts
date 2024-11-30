@@ -164,6 +164,7 @@ export interface GameStore {
   createLevel: (level: Omit<Level, 'id'>) => Promise<void>;
   updateCurrentLevel: (level: Partial<Level>) => void;
   saveLevel: (level: Level) => Promise<void>;
+  deleteLevel: (levelId: string) => Promise<void>;
 
   buddies: TileExit[][];
   setBuddies: (buddies: TileExit[][]) => void;
@@ -300,6 +301,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
     await post(`/api/levels/${level.id}/upsert`, {
       level: serializeLevel(level),
     });
+  },
+  deleteLevel: async (levelId) => {
+    await post(`/api/levels/${levelId}/delete`);
+    set((s) => ({
+      levels: s.levels.filter((l) => l.id !== levelId),
+      currentLevelId: null,
+    }));
   },
 
   buddies: [],

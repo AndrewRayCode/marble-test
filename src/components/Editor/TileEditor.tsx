@@ -92,7 +92,7 @@ const ActionEditor = ({
   const updateTileAction = useGameStore((state) => state.updateTileAction);
 
   return (
-    <div className="border-solid border-2 p-2 mb-3 rounded border-slate-600">
+    <div className="border-solid border-2 p-2 mb-3 rounded-lg border-slate-600">
       <div className="mb-1">
         <label className="text-slate-400">Action Type</label>
         <select
