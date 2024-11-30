@@ -224,6 +224,38 @@ export const TileEditor = ({ selectedTileId }: { selectedTileId: string }) => {
           </select>
         </div>
       )}
+      {selectedTile.type === 'box' && (
+        <div>
+          <label className="text-slate-400">Color</label>
+          <input
+            className={cx(styles.input, 'mb-2 w-full')}
+            value={selectedTile.color}
+            onChange={(e) => {
+              updateTileAndRecompute(selectedTileId, {
+                color: e.target.value,
+              });
+            }}
+            type="text"
+          />
+        </div>
+      )}
+      {selectedTile.type === 'box' && (
+        <div>
+          <label className="text-slate-400">Style</label>
+          <select
+            className={cx(styles.input, 'mb-2 w-full')}
+            value={selectedTile.style}
+            onChange={(e) => {
+              updateTileAndRecompute(selectedTileId, {
+                style: e.target.value as 'solid' | 'grass',
+              });
+            }}
+          >
+            <option value="solid">Solid</option>
+            <option value="grass">Grass</option>
+          </select>
+        </div>
+      )}
       {selectedTile.type === 'button' && (
         <div>
           <div className="mb-3">

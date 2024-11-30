@@ -19,7 +19,6 @@ import {
   INITIAL_SPHERE_RADIUS,
   PLAYER_SPEED,
   SPHERE_RADIUS,
-  TILE_HALF_WIDTH,
   TILE_WIDTH,
 } from '@/game/constants';
 import {
@@ -40,6 +39,7 @@ import buttonSfx from '@/public/button.mp3';
 import coinSfx from '@/public/coin.mp3';
 import moneySfx from '@/public/money.mp3';
 import errorSfx from '@/public/error.mp3';
+import successSfx from '@/public/success.mp3';
 
 import cx from 'classnames';
 import Toggle from './Tiles/Toggle';
@@ -52,6 +52,7 @@ import Cap from './Tiles/Cap';
 import Box from './Tiles/Box';
 import Coin from './Tiles/Coin';
 import Gate, { GATE_DEPTH } from './Tiles/Gate';
+import Sphere from './Tiles/Sphere';
 
 const lowest = (a: {
   left: number;
@@ -93,6 +94,7 @@ const Game = () => {
   const setCurrentTile = useGameStore((state) => state.setCurrentTile);
   const currentCurveIndex = useGameStore((state) => state.currentCurveIndex);
   const levels = useGameStore((state) => state.levels);
+  const setCurrentLevelId = useGameStore((state) => state.setCurrentLevelId);
   const setCurrentCurveIndex = useGameStore(
     (state) => state.setCurrentCurveIndex,
   );
@@ -108,6 +110,7 @@ const Game = () => {
   const setIsEditing = useGameStore((state) => state.setIsEditing);
   const tilesComputed = useGameStore((state) => state.tilesComputed);
   const collectedItems = useGameStore((state) => state.collectedItems);
+  const bonkBackTo = useGameStore((state) => state.bonkBackTo);
 
   const marbleRef = useRef<Mesh>(null);
   const orbit = useRef<OrbitControlsImpl>(null);
@@ -121,8 +124,14 @@ const Game = () => {
 
   const arrowPositions = useMemo(
     () =>
-      currentTile?.type === 't' ? tilesComputed[currentTile.id].exits : [],
-    [tilesComputed, currentTile],
+      currentTile?.type === 't'
+        ? tilesComputed[currentTile.id].exits
+        : currentTile?.type === 'cap'
+          ? [tilesComputed[currentTile.id]?.curves[0].getPointAt(0)]
+          : bonkBackTo
+            ? [new Vector3(...bonkBackTo.lastExit)]
+            : [],
+    [tilesComputed, currentTile, bonkBackTo],
   );
 
   const level = useMemo(() => {
@@ -141,6 +150,7 @@ const Game = () => {
   const [playCoinSfx] = useSound(coinSfx, { volume: 0.15 });
   const [playMoneySfx] = useSound(moneySfx, { volume: 1 });
   const [playErrorSfx] = useSound(errorSfx, { volume: 1 });
+  const [playSuccessSfx] = useSound(successSfx, { volume: 1 });
 
   // Start game :(
   useEffect(() => {
@@ -228,13 +238,13 @@ const Game = () => {
     setCurveProgress(progress);
 
     if (marbleRef.current && currentCurve && currentTile) {
-      if (s.playerMomentum === 0) {
-        if (key().up) {
-          setMomentum(PLAYER_SPEED);
-        } else if (key().down) {
-          setMomentum(-PLAYER_SPEED);
-        }
-      }
+      // if (s.playerMomentum === 0) {
+      //   if (key().up) {
+      //     setMomentum(PLAYER_SPEED);
+      //   } else if (key().down) {
+      //     setMomentum(-PLAYER_SPEED);
+      //   }
+      // }
 
       // Get the point along the curve
       let point = currentCurve.getPointAt(progress);
@@ -255,7 +265,7 @@ const Game = () => {
           }
         });
 
-      const collisionDistance = SPHERE_RADIUS + GATE_DEPTH / 2;
+      const gateCollisionDistance = SPHERE_RADIUS + GATE_DEPTH / 2;
       // Check for switch presses
       level.tiles
         .filter((t): t is GateTile => {
@@ -266,7 +276,7 @@ const Game = () => {
           ) {
             const gp = new Vector3(...t.position);
             const currentDistance = point.distanceTo(gp);
-            return currentDistance <= collisionDistance;
+            return currentDistance <= gateCollisionDistance;
           }
           return false;
         })
@@ -289,7 +299,8 @@ const Game = () => {
             if (currentTile.type === 't') {
               // Figure out how much along this curve we need to go, and then
               // double it, because T junction tiles are only half width!
-              const progressToSnapTo = (TILE_WIDTH - collisionDistance) * 2.0;
+              const progressToSnapTo =
+                (TILE_WIDTH - gateCollisionDistance) * 2.0;
               // Then reverse it again, because if we are leaving a T, we are
               // travelling in the negative direction, so the point on the
               // curve we want to bonk at is inverted
@@ -298,7 +309,7 @@ const Game = () => {
               // Otherwise, take the entrance to the gate, and go back the
               // collision distance, to determine snap position. Negate it if
               // going negative direction.
-              const snappedDistance = entranceToGate - collisionDistance;
+              const snappedDistance = entranceToGate - gateCollisionDistance;
               newProgress = clamp(
                 s.playerMomentum < 0
                   ? TILE_WIDTH - snappedDistance
@@ -310,6 +321,10 @@ const Game = () => {
 
             const newPoint = currentCurve.getPointAt(newProgress);
             setMomentum(0);
+            s.setBonkBackTo({
+              nextDirection: s.playerMomentum < 0 ? 1 : -1,
+              lastExit: ef.toArray(),
+            });
             point = newPoint;
             marbleRef.current!.position.copy(point);
             progress = newProgress;
@@ -383,6 +398,17 @@ const Game = () => {
           }
         });
 
+      const isDown = key().down && directions.down;
+      const isLeft = key().left && directions.left;
+      const isRight = key().right && directions.right;
+      const isUp = key().up && directions.up;
+      const isValidUserChoosenDirection = isDown || isLeft || isRight || isUp;
+
+      if (s.bonkBackTo && isValidUserChoosenDirection) {
+        setMomentum(s.bonkBackTo.nextDirection * PLAYER_SPEED);
+        s.clearBonkBackTo();
+      }
+
       let nextTile: TrackTile | undefined;
       let nextIdx: number | null | undefined;
       let nextId: string | null | undefined;
@@ -397,7 +423,7 @@ const Game = () => {
             nextId = currentTile.connections[0];
             nextEntrance = currentTile.entrances[0];
             // We hit the center of the cap
-          } else if (key().down) {
+          } else if (isValidUserChoosenDirection) {
             setEnteredFrom(-1);
             setNextConnection(0);
             setMomentum(-PLAYER_SPEED);
@@ -406,13 +432,8 @@ const Game = () => {
         } else if (currentTile.type == 't') {
           // We are going towards, and have landed on, the center
           if (s.nextConnection === -1) {
-            const isDown = key().down && directions.down;
-            const isLeft = key().left && directions.left;
-            const isRight = key().right && directions.right;
-            const isUp = key().up && directions.up;
-
             let nextConnection: number | undefined;
-            if (isDown || isLeft || isRight || isUp) {
+            if (isValidUserChoosenDirection) {
               nextConnection = isDown
                 ? directions.down.entrance
                 : isLeft
@@ -499,6 +520,17 @@ const Game = () => {
           }
         }
       }
+
+      const coins = level.tiles.filter((t) => t.type === 'coin');
+      if (
+        coins.length &&
+        coins.filter((t) => !s.collectedItems.has(t.id)).length === 0
+      ) {
+        playSuccessSfx();
+        const idx = levels.findIndex((l) => l.id === currentLevelId);
+        const nextIndex = (idx + 1) % levels.length;
+        setCurrentLevelId(levels[nextIndex].id!);
+      }
     }
   });
 
@@ -517,7 +549,6 @@ const Game = () => {
       <mesh ref={marbleRef}>
         <sphereGeometry args={[SPHERE_RADIUS, 128, 128]} />
         <meshStandardMaterial
-          wireframe
           metalness={0.4}
           roughness={0.01}
           envMapIntensity={0.5}
@@ -576,6 +607,8 @@ const Game = () => {
             return <Cap key={tile.id} tile={tile} />;
           } else if (tile.type === 'box') {
             return <Box key={tile.id} tile={tile} />;
+          } else if (tile.type === 'sphere') {
+            return <Sphere key={tile.id} tile={tile} />;
           } else if (tile.type === 'coin') {
             return (
               <Coin
@@ -599,7 +632,7 @@ const Game = () => {
         level &&
         level.tiles.map((tile) => (
           <group key={tile.id}>
-            {tile.type !== 'box' && (
+            {tile.type !== 'box' && tile.type !== 'sphere' && (
               <Html
                 className={cx('bg-slate-900 idOverlay')}
                 position={tile.position}
@@ -746,7 +779,12 @@ export default function ThreeScene({ dbLevels }: GameProps) {
         ]}
       >
         <EditorUI enabled={isEditing}>
-          <Canvas camera={{ position: [0, 0, 6] }} className="h-full w-full">
+          <Canvas
+            orthographic
+            // camera={{ position: [0, 0, 5] }}
+            camera={{ zoom: 50, position: [0, 0, 100] }}
+            className="h-full w-full"
+          >
             <Game />
           </Canvas>
           {debug && (

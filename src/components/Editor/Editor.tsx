@@ -21,6 +21,7 @@ import {
   BoxTile,
   CoinTile,
   GateTile,
+  SphereTile,
 } from '@/store/gameStore';
 
 import { useRefMap } from '@/util/react';
@@ -35,6 +36,7 @@ import Cap from '../Tiles/Cap';
 import Box from '../Tiles/Box';
 import Coin from '../Tiles/Coin';
 import Gate from '../Tiles/Gate';
+import Sphere from '../Tiles/Sphere';
 
 type EditorProps = {
   setOrbitEnabled: (enabled: boolean) => void;
@@ -107,6 +109,13 @@ const defaultBoxTile: BoxTile = {
   position: [0, 0, 0],
   rotation: [0, 0, 0],
   type: 'box',
+  color: '#ffffff',
+};
+const defaultSphereTile: SphereTile = {
+  id: `editor_cursor_${makeId()}`,
+  position: [0, 0, 0],
+  rotation: [0, 0, 0],
+  type: 'sphere',
   color: '#ffffff',
 };
 const defaultCoinTile: CoinTile = {
@@ -358,6 +367,12 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
                   type: createType,
                   color: '#ffffff',
                 });
+              } else if (createType === 'sphere') {
+                addTile({
+                  ...base,
+                  type: createType,
+                  color: '#ffffff',
+                });
               } else if (createType === 'coin') {
                 addTile({
                   ...base,
@@ -388,6 +403,8 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
             <Cap tile={defaultCapTile} opacity={0.25} />
           ) : createType === 'box' ? (
             <Box tile={defaultBoxTile} opacity={0.25} />
+          ) : createType === 'sphere' ? (
+            <Sphere tile={defaultSphereTile} opacity={0.25} />
           ) : createType === 'coin' ? (
             <Coin tile={defaultCoinTile} opacity={0.25} />
           ) : createType === 'gate' ? (
@@ -401,10 +418,11 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
           <TransformControls
             mode={transformMode}
             translationSnap={0.25}
+            rotationSnap={Math.PI / 4}
+            scaleSnap={0.25}
             size={0.7}
             ref={transform}
             object={tileRefs.get(selectedTileId!)}
-            rotationSnap={Math.PI / 4}
             onPointerOver={(e) => {
               setOverTransform(true);
             }}
@@ -433,7 +451,15 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
                             target.rotation.z,
                           ],
                         }
-                      : {},
+                      : transformMode === 'scale'
+                        ? {
+                            scale: [
+                              target.scale.x,
+                              target.scale.y,
+                              target.scale.z,
+                            ],
+                          }
+                        : {},
                 );
                 autoSnap();
               }
@@ -455,6 +481,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
                 tile itself. */
               position={tile.position}
               rotation={tile.rotation}
+              scale={tile.scale}
               ref={setTileRefs(tile.id)}
             >
               {targetTileIds?.includes(tile.id) && (

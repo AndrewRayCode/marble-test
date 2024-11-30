@@ -162,7 +162,7 @@ export const EditorUI = ({
             className={cx(styles.toolbarButton, 'bg-gray-700', {
               [styles.selected]: createType === 'box',
             })}
-            key="btn"
+            key="box"
             onClick={(e) => {
               e.stopPropagation();
               e.preventDefault();
@@ -170,6 +170,19 @@ export const EditorUI = ({
             }}
           >
             <div>Box</div>
+          </div>,
+          <div
+            className={cx(styles.toolbarButton, 'bg-gray-700', {
+              [styles.selected]: createType === 'sphere',
+            })}
+            key="sphr"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              setCreateType('sphere');
+            }}
+          >
+            <div>Sphere</div>
           </div>,
           <div
             className={cx(styles.toolbarButton, 'bg-gray-700', {

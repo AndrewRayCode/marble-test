@@ -8,7 +8,7 @@ import { useGameStore } from '@/store/gameStore';
 import { useRefMap } from '@/util/react';
 
 import styles from './styles.module.css';
-import { Group } from 'three';
+import { Group, Vector3 } from 'three';
 
 const arrowLookup = {
   left: '⭠',
@@ -27,13 +27,20 @@ const OnScreenArrows = () => {
   const tilesComputed = useGameStore((state) => state.tilesComputed);
   const [arrowRefs, setArrowRef] = useRefMap<Group>();
   const [htmlRefs, setHtmlRefs] = useRefMap<HTMLDivElement>();
+  const bonkBackTo = useGameStore((state) => state.bonkBackTo);
 
   // For every exit position of this junction, there is a *potential* arrow
   // to show
   const arrowPositions = useMemo(
     () =>
-      currentTile?.type === 't' ? tilesComputed[currentTile.id]?.exits : [],
-    [currentTile, tilesComputed],
+      currentTile?.type === 't'
+        ? tilesComputed[currentTile.id].exits
+        : currentTile?.type === 'cap'
+          ? [tilesComputed[currentTile.id]?.curves[0].getPointAt(0)]
+          : bonkBackTo
+            ? [new Vector3(...bonkBackTo.lastExit)]
+            : [],
+    [tilesComputed, currentTile, bonkBackTo],
   );
 
   useEffect(

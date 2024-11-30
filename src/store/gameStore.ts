@@ -12,6 +12,7 @@ export type Side = 'left' | 'right' | 'front' | 'back';
 export type Transform = {
   position?: [number, number, number];
   rotation?: [number, number, number];
+  scale?: [number, number, number];
 };
 
 export type TileComputed = {
@@ -46,6 +47,7 @@ export type TileBase = {
   id: string;
   position: [number, number, number];
   rotation: [number, number, number];
+  scale?: [number, number, number];
   type: string;
 };
 
@@ -85,6 +87,12 @@ export type CapTile = TileBase & {
 
 export type BoxTile = TileBase & {
   type: 'box';
+  style?: 'grass' | 'solid';
+  color: string;
+};
+
+export type SphereTile = TileBase & {
+  type: 'sphere';
   color: string;
 };
 
@@ -117,7 +125,13 @@ export const isJunctionTile = (tile: Tile): tile is JunctionTile =>
 // Only tiles the player can roll / travel on
 export type TrackTile = RailTile | JunctionTile | CapTile;
 // All valid level tiles
-export type Tile = TrackTile | ButtonTile | BoxTile | CoinTile | GateTile;
+export type Tile =
+  | TrackTile
+  | ButtonTile
+  | BoxTile
+  | SphereTile
+  | CoinTile
+  | GateTile;
 
 export type Level = Omit<DbLevel, 'id' | 'data'> & {
   id?: string;
@@ -221,12 +235,6 @@ export interface GameStore {
   setTransform: (id: string, transform: Transform) => void;
   clearTransform: (id: string, key?: keyof Transform) => void;
 
-  // Game UI state
-  arrowPositions: Vector3[];
-  setArrowPositions: (positions: Vector3[]) => void;
-  screenArrows: ScreenArrows;
-  setScreenArrows: (arrows: ScreenArrows) => void;
-
   collectedItems: Set<string>;
   collectItem: (id: string) => void;
 
@@ -234,7 +242,23 @@ export interface GameStore {
   setGateState: (id: string, state: GateState) => void;
   clearGateState: (id: string) => void;
 
+  bonkBackTo: {
+    nextDirection: 1 | -1;
+    lastExit: [number, number, number];
+  } | null;
+  setBonkBackTo: (bbt: {
+    nextDirection: 1 | -1;
+    lastExit: [number, number, number];
+  }) => void;
+  clearBonkBackTo: () => void;
+
   resetLevel: () => void;
+
+  // Game UI state
+  arrowPositions: Vector3[];
+  setArrowPositions: (positions: Vector3[]) => void;
+  screenArrows: ScreenArrows;
+  setScreenArrows: (arrows: ScreenArrows) => void;
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -522,7 +546,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set((state) => {
       if (key) {
         const transform = state.transforms[id];
-        delete transform[key];
+        if (transform && transform[key]) {
+          delete transform[key];
+        }
         return {
           transforms: {
             ...state.transforms,
@@ -563,12 +589,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
       return { gateStates };
     }),
 
+  bonkBackTo: null,
+  setBonkBackTo: (bonkBackTo) => set({ bonkBackTo }),
+  clearBonkBackTo: () => set({ bonkBackTo: null }),
+
   resetLevel: () =>
     set((state) => {
       if (!state.currentLevelId) {
         return {};
       }
-      set({ transforms: {} });
 
       const level = state.levels.find((l) => l.id === state.currentLevelId)!;
       const tilesComputed = level.tiles.reduce<Record<string, TileComputed>>(
@@ -595,7 +624,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
         // TODO: Need a starting connection too!
         nextConnection: -1,
         playerMomentum: 0,
+        transforms: {},
         debugPoints: [],
+        bonkBackTo: null,
         collectedItems: new Set(),
         gateStates: {},
         tilesComputed,

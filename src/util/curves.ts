@@ -180,7 +180,7 @@ export const straightCurve = new CubicBezierCurve3(
   new Vector3(0, 1, 0),
 );
 
-const HALF_TURN_CORRECTION = 0.5 * INITIAL_SPHERE_RADIUS;
+const HALF_TURN_CORRECTION = 0.4 * INITIAL_SPHERE_RADIUS;
 export const halfTurn = new CubicBezierCurve3(
   new Vector3(0, 0, 0),
   new Vector3(-HALF_TURN_CORRECTION, 1, 0),
