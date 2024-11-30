@@ -19,6 +19,8 @@ import {
   INITIAL_SPHERE_RADIUS,
   PLAYER_SPEED,
   SPHERE_RADIUS,
+  TILE_HALF_WIDTH,
+  TILE_WIDTH,
 } from '@/game/constants';
 import {
   isRailTile,
@@ -49,7 +51,7 @@ import EditorUI from './Editor/EditorUI';
 import Cap from './Tiles/Cap';
 import Box from './Tiles/Box';
 import Coin from './Tiles/Coin';
-import Gate from './Tiles/Gate';
+import Gate, { GATE_DEPTH } from './Tiles/Gate';
 
 const lowest = (a: {
   left: number;
@@ -83,6 +85,7 @@ const Game = () => {
   const [, key] = useKeyboardControls();
 
   const buddies = useGameStore((state) => state.buddies);
+  const debugPoints = useGameStore((state) => state.debugPoints);
   const toggleDebug = useGameStore((state) => state.toggleDebug);
   const resetLevel = useGameStore((state) => state.resetLevel);
   const setScreenArrows = useGameStore((state) => state.setScreenArrows);
@@ -209,7 +212,7 @@ const Game = () => {
       return;
     }
 
-    const progress = clamp(
+    let progress = clamp(
       s.curveProgress +
         s.playerMomentum *
           delta *
@@ -234,7 +237,7 @@ const Game = () => {
       }
 
       // Get the point along the curve
-      const point = currentCurve.getPointAt(progress);
+      let point = currentCurve.getPointAt(progress);
 
       // Update the sphere's position
       marbleRef.current.position.copy(point);
@@ -252,27 +255,65 @@ const Game = () => {
           }
         });
 
+      const collisionDistance = SPHERE_RADIUS + GATE_DEPTH / 2;
       // Check for switch presses
       level.tiles
-        .filter((t): t is GateTile => t.type === 'gate')
+        .filter((t): t is GateTile => {
+          if (
+            t.type === 'gate' &&
+            (s.gateStates[t.id] === 'closed' ||
+              (!(t.id in s.gateStates) && t.defaultState === 'closed'))
+          ) {
+            const gp = new Vector3(...t.position);
+            const currentDistance = point.distanceTo(gp);
+            return currentDistance <= collisionDistance;
+          }
+          return false;
+        })
         .forEach((gate) => {
-          const isNear = point.distanceTo(new Vector3(...gate.position)) < 0.5;
-          const hasBonked = s.enabledBooleanSwitchesFor[-1]?.[gate.id] === true;
-          // Bonk!
-          if (isNear && !hasBonked) {
-            if (s.playerMomentum !== 0) {
-              s.setEnabledBooleanSwitchesFor(-1, gate.id, true);
-              playErrorSfx();
-              setMomentum(0);
+          const gp = new Vector3(...gate.position);
+          let ef = s.tilesComputed[currentTile.id]?.exits?.[s.enteredFrom];
+
+          // If this is a T junction and we came from the middle, the exited
+          // from tile won't have a position, so set it to the middle of the T
+          if (currentTile.type === 't' && s.enteredFrom === -1) {
+            ef = s.tilesComputed[currentTile.id]?.curves[0].getPointAt(1);
+          }
+
+          if (ef && s.playerMomentum !== 0) {
+            playErrorSfx();
+            const entranceToGate = ef.distanceTo(gp);
+
+            let newProgress = progress;
+
+            if (currentTile.type === 't') {
+              // Figure out how much along this curve we need to go, and then
+              // double it, because T junction tiles are only half width!
+              const progressToSnapTo = (TILE_WIDTH - collisionDistance) * 2.0;
+              // Then reverse it again, because if we are leaving a T, we are
+              // travelling in the negative direction, so the point on the
+              // curve we want to bonk at is inverted
+              newProgress = clamp(TILE_WIDTH - progressToSnapTo, 0, 1);
+            } else {
+              // Otherwise, take the entrance to the gate, and go back the
+              // collision distance, to determine snap position. Negate it if
+              // going negative direction.
+              const snappedDistance = entranceToGate - collisionDistance;
+              newProgress = clamp(
+                s.playerMomentum < 0
+                  ? TILE_WIDTH - snappedDistance
+                  : snappedDistance,
+                0,
+                1,
+              );
             }
-            // TODO: Need to figure out what direction of travel is allowed
-            if (key().up) {
-              setMomentum(-PLAYER_SPEED);
-            } else if (key().down) {
-              setMomentum(PLAYER_SPEED);
-            }
-          } else if (!isNear && hasBonked) {
-            s.setEnabledBooleanSwitchesFor(-1, gate.id, false);
+
+            const newPoint = currentCurve.getPointAt(newProgress);
+            setMomentum(0);
+            point = newPoint;
+            marbleRef.current!.position.copy(point);
+            progress = newProgress;
+            setCurveProgress(newProgress);
           }
         });
 
@@ -474,8 +515,9 @@ const Game = () => {
 
       {/* Player */}
       <mesh ref={marbleRef}>
-        <sphereGeometry args={[SPHERE_RADIUS, 256, 256]} />
+        <sphereGeometry args={[SPHERE_RADIUS, 128, 128]} />
         <meshStandardMaterial
+          wireframe
           metalness={0.4}
           roughness={0.01}
           envMapIntensity={0.5}
@@ -483,6 +525,12 @@ const Game = () => {
         />
       </mesh>
 
+      {debugPoints.map((point, i) => (
+        <mesh key={i} position={point.position}>
+          <sphereGeometry args={[0.1, 16, 16]} />
+          <meshStandardMaterial color={point.color} />
+        </mesh>
+      ))}
       {debug &&
         buddies.map(([b1, b2], i) => (
           <group key={i}>
@@ -551,12 +599,14 @@ const Game = () => {
         level &&
         level.tiles.map((tile) => (
           <group key={tile.id}>
-            <Html
-              className={cx('bg-slate-900 idOverlay')}
-              position={tile.position}
-            >
-              {tile.id}
-            </Html>
+            {tile.type !== 'box' && (
+              <Html
+                className={cx('bg-slate-900 idOverlay')}
+                position={tile.position}
+              >
+                {tile.id}
+              </Html>
+            )}
             {isRailTile(tile) ? (
               <mesh>
                 <tubeGeometry

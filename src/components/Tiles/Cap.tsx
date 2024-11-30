@@ -13,7 +13,7 @@ import { useSpring, a } from '@react-spring/three';
 import { railMaterial } from '@/game/materials';
 
 const CROSS_SCALE = INITIAL_SPHERE_RADIUS * 2;
-const CROSS_DOWNSCALE_RADIUS_ADJUST = 0.004;
+const CROSS_DOWNSCALE_RADIUS_ADJUST = 0.001;
 
 const SOLO_SCALE = pointAt45.y * 2;
 const SOLO_DOWNSCALE_RADIUS_ADJUST = 0.011;
