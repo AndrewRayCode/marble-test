@@ -1,9 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import useSound from 'use-sound';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
-import { Mesh, Vector2, Vector3 } from 'three';
+import {
+  Mesh,
+  PerspectiveCamera,
+  Vector2,
+  Vector3,
+  Group as ThreeGroup,
+} from 'three';
 import { clamp } from 'three/src/math/MathUtils.js';
 import { Canvas, useThree } from '@react-three/fiber';
 import {
@@ -60,6 +66,7 @@ import Coin from './Tiles/Coin';
 import Gate, { GATE_DEPTH } from './Tiles/Gate';
 import Sphere from './Tiles/Sphere';
 import Group from './Tiles/Group';
+import { useBackgroundRender } from '@/util/react';
 
 const lowest = (a: {
   left: number;
@@ -119,11 +126,13 @@ const Game = () => {
   const collectedItems = useGameStore((state) => state.collectedItems);
   const bonkBackTo = useGameStore((state) => state.bonkBackTo);
 
+  const [gameObjectsRef, renderBackground] = useBackgroundRender();
+
   // const { getCurrentViewport } = useThree((state) => state.viewport);
 
   const marbleRef = useRef<Mesh>(null);
   const orbit = useRef<OrbitControlsImpl>(null);
-  const { camera, viewport } = useThree();
+  const { camera } = useThree();
 
   const level = useMemo(() => {
     if (currentLevelId) {
@@ -195,6 +204,8 @@ const Game = () => {
   }, [gameStarted, setGameStarted, resetLevel]);
 
   useFrame((state, delta) => {
+    renderBackground();
+
     const s = useGameStore.getState();
 
     if (!level || !currentTile) {
@@ -645,7 +656,7 @@ const Game = () => {
   });
 
   return (
-    <group>
+    <>
       <color attach="background" args={['white']} />
       {/* <ambientLight intensity={0.5} /> */}
       <pointLight position={[0, 4, 0]} intensity={2} castShadow />
@@ -655,127 +666,118 @@ const Game = () => {
         backgroundBlurriness={0.3}
       />
 
-      {/* Player */}
-      <mesh ref={marbleRef} castShadow>
-        <sphereGeometry args={[SPHERE_RADIUS, 128, 128]} />
-        <meshStandardMaterial
-          metalness={0.4}
-          roughness={0.01}
-          envMapIntensity={0.5}
-          emissive={0x333333}
-        />
-      </mesh>
-
-      {debugPoints.map((point, i) => (
-        <mesh key={i} position={point.position}>
-          <sphereGeometry args={[0.1, 16, 16]} />
-          <meshStandardMaterial color={point.color} />
+      <group ref={gameObjectsRef}>
+        {/* Player */}
+        <mesh ref={marbleRef} castShadow>
+          <sphereGeometry args={[SPHERE_RADIUS, 128, 128]} />
+          <meshStandardMaterial
+            metalness={0.4}
+            roughness={0.01}
+            envMapIntensity={0.5}
+            emissive={0x333333}
+          />
         </mesh>
-      ))}
-      {debug &&
-        buddies.map(([b1, b2], i) => (
-          <group key={i}>
-            <mesh
-              position={[
-                b1.position[0] + Math.random() * 0.1,
-                b1.position[1],
-                b1.position[2] + Math.random() * 0.1,
-              ]}
-            >
-              <sphereGeometry args={[0.1, 16, 16]} />
-              <meshStandardMaterial color="red" transparent opacity={0.5} />
-            </mesh>
-            {b2 && (
+
+        {debugPoints.map((point, i) => (
+          <mesh key={i} position={point.position}>
+            <sphereGeometry args={[0.1, 16, 16]} />
+            <meshStandardMaterial color={point.color} />
+          </mesh>
+        ))}
+        {debug &&
+          buddies.map(([b1, b2], i) => (
+            <group key={i}>
               <mesh
                 position={[
-                  b2.position[0] - Math.random() * 0.1,
-                  b2.position[1],
-                  b2.position[2] - Math.random() * 0.1,
+                  b1.position[0] + Math.random() * 0.1,
+                  b1.position[1],
+                  b1.position[2] + Math.random() * 0.1,
                 ]}
               >
                 <sphereGeometry args={[0.1, 16, 16]} />
-                <meshStandardMaterial color="blue" transparent opacity={0.5} />
+                <meshStandardMaterial color="red" transparent opacity={0.5} />
               </mesh>
-            )}
-          </group>
-        ))}
-
-      {/* On-screen arrows */}
-      <OnScreenArrows />
-
-      {level &&
-        level.tiles
-          .filter((t) => t.parentId === undefined || t.parentId === null)
-          .map((tile) => {
-            if (tile.type === 'group') {
-              return <Group key={tile.id} tile={tile} />;
-            } else if (tile.type === 'straight') {
-              return <Straightaway key={tile.id} tile={tile} />;
-            } else if (tile.type === 'quarter') {
-              return <QuarterTurn key={tile.id} tile={tile} />;
-            } else if (tile.type === 't') {
-              return <Junction key={tile.id} tile={tile} />;
-            } else if (tile.type === 'button') {
-              return <Toggle key={tile.id} tile={tile} />;
-            } else if (tile.type === 'cap') {
-              return <Cap key={tile.id} tile={tile} />;
-            } else if (tile.type === 'box') {
-              return <Box key={tile.id} tile={tile} />;
-            } else if (tile.type === 'sphere') {
-              return <Sphere key={tile.id} tile={tile} />;
-            } else if (tile.type === 'coin') {
-              return (
-                <Coin
-                  key={tile.id}
-                  tile={tile}
-                  visible={!collectedItems.has(tile.id)}
-                />
-              );
-            } else if (tile.type === 'gate') {
-              return <Gate key={tile.id} tile={tile} />;
-            }
-          })}
-
-      {isEditing && (
-        <EditorComponent
-          setOrbitEnabled={(e) => (orbit.current!.enabled = e)}
-        />
-      )}
-
-      {debug &&
-        level &&
-        level.tiles.map((tile) => {
-          const offset = level.tiles.find((t) => t.id === tile.parentId)
-            ?.position || [0, 0, 0];
-          return (
-            <group key={tile.id}>
-              {tile.type !== 'box' && tile.type !== 'sphere' && (
-                <Html
-                  className={cx('bg-slate-900 idOverlay')}
+              {b2 && (
+                <mesh
                   position={[
-                    tile.position[0] + offset[0],
-                    tile.position[1] + offset[1],
-                    tile.position[2] + offset[2],
+                    b2.position[0] - Math.random() * 0.1,
+                    b2.position[1],
+                    b2.position[2] - Math.random() * 0.1,
                   ]}
                 >
-                  {tile.id}
-                </Html>
-              )}
-              {isRailTile(tile) ? (
-                <mesh>
-                  <tubeGeometry
-                    args={[
-                      tilesComputed[tile.id]?.curves?.[0],
-                      70,
-                      0.01,
-                      50,
-                      false,
-                    ]}
+                  <sphereGeometry args={[0.1, 16, 16]} />
+                  <meshStandardMaterial
+                    color="blue"
+                    transparent
+                    opacity={0.5}
                   />
-                  <meshStandardMaterial color="blue" wireframe />
                 </mesh>
-              ) : (
-                <group>
+              )}
+            </group>
+          ))}
+
+        {/* On-screen arrows */}
+        <OnScreenArrows />
+
+        {level &&
+          level.tiles
+            .filter((t) => t.parentId === undefined || t.parentId === null)
+            .map((tile) => {
+              if (tile.type === 'group') {
+                return <Group key={tile.id} tile={tile} />;
+              } else if (tile.type === 'straight') {
+                return <Straightaway key={tile.id} tile={tile} />;
+              } else if (tile.type === 'quarter') {
+                return <QuarterTurn key={tile.id} tile={tile} />;
+              } else if (tile.type === 't') {
+                return <Junction key={tile.id} tile={tile} />;
+              } else if (tile.type === 'button') {
+                return <Toggle key={tile.id} tile={tile} />;
+              } else if (tile.type === 'cap') {
+                return <Cap key={tile.id} tile={tile} />;
+              } else if (tile.type === 'box') {
+                return <Box key={tile.id} tile={tile} />;
+              } else if (tile.type === 'sphere') {
+                return <Sphere key={tile.id} tile={tile} />;
+              } else if (tile.type === 'coin') {
+                return (
+                  <Coin
+                    key={tile.id}
+                    tile={tile}
+                    visible={!collectedItems.has(tile.id)}
+                  />
+                );
+              } else if (tile.type === 'gate') {
+                return <Gate key={tile.id} tile={tile} />;
+              }
+            })}
+
+        {isEditing && (
+          <EditorComponent
+            setOrbitEnabled={(e) => (orbit.current!.enabled = e)}
+          />
+        )}
+
+        {debug &&
+          level &&
+          level.tiles.map((tile) => {
+            const offset = level.tiles.find((t) => t.id === tile.parentId)
+              ?.position || [0, 0, 0];
+            return (
+              <group key={tile.id}>
+                {tile.type !== 'box' && tile.type !== 'sphere' && (
+                  <Html
+                    className={cx('bg-slate-900 idOverlay')}
+                    position={[
+                      tile.position[0] + offset[0],
+                      tile.position[1] + offset[1],
+                      tile.position[2] + offset[2],
+                    ]}
+                  >
+                    {tile.id}
+                  </Html>
+                )}
+                {isRailTile(tile) ? (
                   <mesh>
                     <tubeGeometry
                       args={[
@@ -788,44 +790,59 @@ const Game = () => {
                     />
                     <meshStandardMaterial color="blue" wireframe />
                   </mesh>
-                  <mesh>
-                    <tubeGeometry
-                      args={[
-                        tilesComputed[tile.id]?.curves?.[1],
-                        70,
-                        0.01,
-                        50,
-                        false,
-                      ]}
-                    />
-                    <meshStandardMaterial color="blue" wireframe />
-                  </mesh>
-                  <mesh>
-                    <tubeGeometry
-                      args={[
-                        tilesComputed[tile.id]?.curves?.[2],
-                        70,
-                        0.01,
-                        50,
-                        false,
-                      ]}
-                    />
-                    <meshStandardMaterial color="blue" wireframe />
-                  </mesh>
-                </group>
-              )}
-            </group>
-          );
-        })}
+                ) : (
+                  <group>
+                    <mesh>
+                      <tubeGeometry
+                        args={[
+                          tilesComputed[tile.id]?.curves?.[0],
+                          70,
+                          0.01,
+                          50,
+                          false,
+                        ]}
+                      />
+                      <meshStandardMaterial color="blue" wireframe />
+                    </mesh>
+                    <mesh>
+                      <tubeGeometry
+                        args={[
+                          tilesComputed[tile.id]?.curves?.[1],
+                          70,
+                          0.01,
+                          50,
+                          false,
+                        ]}
+                      />
+                      <meshStandardMaterial color="blue" wireframe />
+                    </mesh>
+                    <mesh>
+                      <tubeGeometry
+                        args={[
+                          tilesComputed[tile.id]?.curves?.[2],
+                          70,
+                          0.01,
+                          50,
+                          false,
+                        ]}
+                      />
+                      <meshStandardMaterial color="blue" wireframe />
+                    </mesh>
+                  </group>
+                )}
+              </group>
+            );
+          })}
 
-      {debug && currentTile && (
-        <mesh position={currentTile.position}>
-          <boxGeometry args={[1, 1, 1]} />
-          <meshStandardMaterial color="red" opacity={0.5} transparent />
-        </mesh>
-      )}
-      <OrbitControls ref={orbit} />
-    </group>
+        {debug && currentTile && (
+          <mesh position={currentTile.position}>
+            <boxGeometry args={[1, 1, 1]} />
+            <meshStandardMaterial color="red" opacity={0.5} transparent />
+          </mesh>
+        )}
+        <OrbitControls ref={orbit} />
+      </group>
+    </>
   );
 };
 
@@ -903,9 +920,9 @@ export default function ThreeScene({ dbLevels }: GameProps) {
         <EditorUI enabled={isEditing}>
           <Canvas
             shadows
-            // orthographic
-            // camera={{ zoom: 50, position: [0, 0, 100] }}
-            camera={{ position: [0, 0, 5] }}
+            orthographic
+            camera={{ zoom: 50, position: [0, 0, 100] }}
+            // camera={{ position: [0, 0, 5] }}
             className="h-full w-full"
           >
             <Game />
