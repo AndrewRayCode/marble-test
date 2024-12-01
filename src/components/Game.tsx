@@ -119,6 +119,8 @@ const Game = () => {
   const collectedItems = useGameStore((state) => state.collectedItems);
   const bonkBackTo = useGameStore((state) => state.bonkBackTo);
 
+  // const { getCurrentViewport } = useThree((state) => state.viewport);
+
   const marbleRef = useRef<Mesh>(null);
   const orbit = useRef<OrbitControlsImpl>(null);
   const { camera, viewport } = useThree();
@@ -164,11 +166,24 @@ const Game = () => {
   const [playMoneySfx] = useSound(moneySfx, { volume: 1 });
   const [playErrorSfx] = useSound(errorSfx, { volume: 1 });
   const [playSuccessSfx] = useSound(successSfx, { volume: 1 });
-  const [playMetalHitSfx] = useSound(metalSfx, { volume: 0.1 });
-  const [playMetalHit2Sfx] = useSound(metal2Sfx, { volume: 0.05 });
-  const [playSpringboardSfx] = useSound(springboardSfx, { volume: 0.75 });
+  const [playMetalHitSfx] = useSound(metalSfx, { volume: 0.01 });
+  const [playMetalHit2Sfx] = useSound(metal2Sfx, { volume: 0.0 });
+  const [playSpringboardSfx] = useSound(springboardSfx, { volume: 1 });
   const [playGadget1Sfx] = useSound(gadget1Sfx, { volume: 0.25 });
   const [playGadget2Sfx] = useSound(gadget2Sfx, { volume: 0.25 });
+
+  const currentTilePosition = useMemo(() => {
+    if (currentTile && level) {
+      const offset = level.tiles.find((t) => t.id === currentTile.parentId)
+        ?.position || [0, 0, 0];
+
+      return new Vector3(
+        currentTile.position[0] + offset[0],
+        currentTile.position[1] + offset[1],
+        currentTile.position[2] + offset[2],
+      );
+    }
+  }, [currentTile, level]);
 
   // Start game :(
   useEffect(() => {
@@ -186,16 +201,46 @@ const Game = () => {
       return;
     }
 
-    const tileScreen = toScreen(
-      new Vector3(...currentTile.position),
-      camera,
-      viewport,
-    );
+    const tileScreen = toScreen(currentTilePosition!, camera, {
+      // r3f viewport size is busted - reports much smaller numbers
+      width: window.innerWidth,
+      height: window.innerHeight,
+    });
+    // let debug = document.getElementById(`debugtile`);
+    // if (!debug) {
+    //   debug = document.createElement('div');
+    //   debug.id = `debugtile`;
+    //   debug.style.position = 'absolute';
+    //   debug.style.width = '10px';
+    //   debug.style.height = '10px';
+    //   debug.style.background = 'black';
+    //   debug.style.zIndex = '1000';
+    //   document.body.appendChild(debug);
+    // }
+    // debug.style.left = `${tileScreen.x}px`;
+    // debug.style.top = `${tileScreen.y}px`;
 
     const entranceDistances = arrowPositions.map((position, entrance) => {
-      const screen = toScreen(position, camera, viewport);
+      // const viewport = getCurrentViewport();
+      const screen = toScreen(position, camera, {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
       // Create vector pointing from marble to entrance
       const v = new Vector2(screen.x - tileScreen.x, screen.y - tileScreen.y);
+      // let debug = document.getElementById(`debug${entrance}`);
+      // if (!debug) {
+      //   debug = document.createElement('div');
+      //   debug.id = `debug${entrance}`;
+      //   debug.style.position = 'absolute';
+      //   debug.style.width = '7px';
+      //   debug.style.height = '7px';
+      //   debug.style.background = ['red', 'green', 'blue'][entrance];
+      //   debug.style.zIndex = '1000';
+      //   document.body.appendChild(debug);
+      // }
+      // debug.style.left = `${screen.x}px`;
+      // debug.style.top = `${screen.y}px`;
       return {
         entrance,
         position,
@@ -207,14 +252,13 @@ const Game = () => {
     });
 
     const seen = new Set<string>();
-    const arrowsForEntrances = entranceDistances.reduce((acc, d) => {
+    const arrowsForEntrances = entranceDistances.reduce((acc, d, i) => {
       // Figure out which cardinal direction this is most pointing
       const arrow = lowest(d);
       // Only one entrance per cardinal direction!
       if (!seen.has(arrow)) {
         seen.add(arrow);
         return acc.concat({
-          d: 0,
           position: d.position,
           entrance: d.entrance,
           arrow: lowest(d),
@@ -369,8 +413,11 @@ const Game = () => {
               s.setEnabledBooleanSwitchesFor(-1, button.id, false);
 
               actions.forEach((action) => {
-                playGadget1Sfx();
-                playGadget2Sfx();
+                if (action.type === 'gate') {
+                  playGadget2Sfx();
+                } else if (action.type == 'rotation') {
+                  playGadget1Sfx();
+                }
                 s.applyAction(currentTile, action);
               });
             } else if (!enabled && !isNear) {
@@ -386,10 +433,20 @@ const Game = () => {
 
               if (!on) {
                 actions.forEach((action) => {
+                  if (action.type === 'gate') {
+                    playGadget2Sfx();
+                  } else if (action.type == 'rotation') {
+                    playGadget1Sfx();
+                  }
                   s.applyAction(currentTile, action);
                 });
               } else {
                 actions.forEach((action) => {
+                  if (action.type === 'gate') {
+                    playGadget2Sfx();
+                  } else if (action.type == 'rotation') {
+                    playGadget1Sfx();
+                  }
                   s.clearAction(currentTile, action);
                 });
               }
@@ -403,6 +460,11 @@ const Game = () => {
               s.setEnabledBooleanSwitchesFor(-1, button.id, false);
               s.setBooleanSwitch(button.id, !on);
               actions.forEach((action) => {
+                if (action.type === 'gate') {
+                  playGadget2Sfx();
+                } else if (action.type == 'rotation') {
+                  playGadget1Sfx();
+                }
                 s.applyAction(currentTile, action);
               });
             }
@@ -412,6 +474,11 @@ const Game = () => {
               s.setBooleanSwitch(button.id, !on);
 
               actions.forEach((action) => {
+                if (action.type === 'gate') {
+                  playGadget2Sfx();
+                } else if (action.type == 'rotation') {
+                  playGadget1Sfx();
+                }
                 s.clearAction(currentTile, action);
               });
             }
@@ -527,8 +594,7 @@ const Game = () => {
         // If we detected there is somewhere to go...
         if (nextId !== undefined || nextEntrance !== undefined) {
           if (nextId === null || nextEntrance == null) {
-            console.log('no next!');
-            // fall out of level!
+            throw new Error('wtf?');
             return;
           } else {
             nextTile = level.tiles.find(
@@ -581,8 +647,8 @@ const Game = () => {
   return (
     <group>
       <color attach="background" args={['white']} />
-      <ambientLight intensity={0.5} />
-      <pointLight position={[10, 10, 10]} />
+      {/* <ambientLight intensity={0.5} /> */}
+      <pointLight position={[0, 4, 0]} intensity={2} castShadow />
       <Environment
         files="/envmaps/room.hdr"
         background
@@ -590,7 +656,7 @@ const Game = () => {
       />
 
       {/* Player */}
-      <mesh ref={marbleRef}>
+      <mesh ref={marbleRef} castShadow>
         <sphereGeometry args={[SPHERE_RADIUS, 128, 128]} />
         <meshStandardMaterial
           metalness={0.4}
@@ -836,6 +902,7 @@ export default function ThreeScene({ dbLevels }: GameProps) {
       >
         <EditorUI enabled={isEditing}>
           <Canvas
+            shadows
             // orthographic
             // camera={{ zoom: 50, position: [0, 0, 100] }}
             camera={{ position: [0, 0, 5] }}

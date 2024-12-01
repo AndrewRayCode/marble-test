@@ -49,9 +49,10 @@ const Gate = ({
         position={[-TILE_HALF_WIDTH, 0, 0]}
         rotation={gateRotation as unknown as [number, number, number]}
       >
-        <mesh position={[0.5, 0, 0]}>
+        <mesh castShadow position={[0.5, 0, 0]}>
           <boxGeometry args={[1, 0.2, GATE_DEPTH]} />
-          <meshBasicMaterial
+          <meshStandardMaterial
+            roughness={0.5}
             color={gateState === 'closed' ? 'red' : 'green'}
             opacity={matOpacity}
             transparent={matOpacity < 1}

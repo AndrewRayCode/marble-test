@@ -56,7 +56,7 @@ const Straightaway = ({
   return (
     <group position={position} rotation={rotation}>
       {debug && (
-        <mesh>
+        <mesh castShadow>
           <boxGeometry args={[1, 1, 1]} />
           <meshStandardMaterial color="red" wireframe />
         </mesh>
@@ -66,28 +66,40 @@ const Straightaway = ({
       ))}
       {/* front right */}
       {['all', 'right', 'front'].includes(showSides) ? (
-        <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
+        <mesh
+          castShadow
+          position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}
+        >
           <primitive object={railGeometry} />
           <primitive object={railMat} />
         </mesh>
       ) : null}
       {/* front left */}
       {['all', 'front', 'left'].includes(showSides) ? (
-        <mesh position={[-pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
+        <mesh
+          castShadow
+          position={[-pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}
+        >
           <primitive object={railGeometry} />
           <primitive object={railMat} />
         </mesh>
       ) : null}
       {/* back right */}
       {['all', 'right', 'back'].includes(showSides) ? (
-        <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}>
+        <mesh
+          castShadow
+          position={[pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}
+        >
           <primitive object={railGeometry} />
           <primitive object={railMat} />
         </mesh>
       ) : null}
       {/* back left */}
       {['all', 'left', 'back'].includes(showSides) ? (
-        <mesh position={[-pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}>
+        <mesh
+          castShadow
+          position={[-pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}
+        >
           <primitive object={railGeometry} />
           <primitive object={railMat} />
         </mesh>

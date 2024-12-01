@@ -89,7 +89,10 @@ const Junction = ({
       )}
       {/* front right */}
       {['all', 'right', 'front'].includes(showSides) ? (
-        <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
+        <mesh
+          castShadow
+          position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}
+        >
           <tubeGeometry args={[small, 70, RAIL_RADIUS, 50, false]} />
           <primitive object={railMat} />
         </mesh>
@@ -97,6 +100,7 @@ const Junction = ({
       {/* front left */}
       {['all', 'front'].includes(showSides) ? (
         <mesh
+          castShadow
           position={[-pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}
           rotation={[0, Math.PI, 0]}
         >
@@ -106,7 +110,10 @@ const Junction = ({
       ) : null}
       {/* back right */}
       {['all', 'back'].includes(showSides) ? (
-        <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}>
+        <mesh
+          castShadow
+          position={[pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}
+        >
           <tubeGeometry args={[small, 70, RAIL_RADIUS, 50, false]} />
           <primitive object={railMat} />
         </mesh>
@@ -114,6 +121,7 @@ const Junction = ({
       {/* back left */}
       {['all', 'back'].includes(showSides) ? (
         <mesh
+          castShadow
           position={[-pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}
           rotation={[0, Math.PI, 0]}
         >
@@ -124,6 +132,7 @@ const Junction = ({
       {/* top back */}
       {['all', 'back'].includes(showSides) ? (
         <mesh
+          castShadow
           position={[-TILE_HALF_WIDTH, pointAt45.y, -pointAt45.y]}
           rotation={[0, 0, -Math.PI / 2]}
         >
@@ -134,6 +143,7 @@ const Junction = ({
       {/* top front */}
       {['all', 'front'].includes(showSides) ? (
         <mesh
+          castShadow
           position={[-TILE_HALF_WIDTH, pointAt45.y, pointAt45.y]}
           rotation={[0, 0, -Math.PI / 2]}
         >

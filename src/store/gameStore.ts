@@ -148,7 +148,6 @@ export type Level = Omit<DbLevel, 'id' | 'data'> & {
 };
 
 export type ScreenArrow = {
-  d: number;
   position: Vector3;
   entrance: number;
   arrow: 'up' | 'down' | 'left' | 'right';
@@ -604,14 +603,18 @@ export const useGameStore = create<GameStore>((set, get) => ({
           updatedComputed = tilesToUpdate.reduce(
             (acc, tile) => ({
               ...acc,
-              [tile.id]: computeTrackTile(
-                tile as RailTile,
-                // original tile transform, if any, probably shouldn't be any since it's in a group!
-                s.transforms[tile.id],
-                groupTile,
-                // The updated group transform
-                transform,
-              ),
+              ...(isRailTile(tile) || isJunctionTile(tile)
+                ? {
+                    [tile.id]: computeTrackTile(
+                      tile as RailTile,
+                      // original tile transform, if any, probably shouldn't be any since it's in a group!
+                      s.transforms[tile.id],
+                      groupTile,
+                      // The updated group transform
+                      transform,
+                    ),
+                  }
+                : null),
             }),
             s.tilesComputed,
           );
