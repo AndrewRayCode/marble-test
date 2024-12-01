@@ -276,27 +276,23 @@ export const applyParentTransformation = (
 ) => {
   const group = new Group();
   group.position.copy(new Vector3(...parentTile.position));
+  // Group initial rotation is not supported
   group.updateMatrixWorld();
   group.updateWorldMatrix(true, true);
   group.updateMatrix();
-  // Group initial rotation is not supported
 
-  const objectPositionInWorldSpace = new Vector3(
-    // Might need to consider transform here as well?
-    position[0] + parentTile.position[0],
-    position[1] + parentTile.position[1],
-    position[2] + parentTile.position[2],
-  );
   const op = new Vector3(...position);
   const child = new Group();
   child.rotation.copy(new Euler(...rotation));
-  child.position.copy(new Vector3(...objectPositionInWorldSpace));
   child.position.copy(new Vector3(...op));
   group.add(child);
 
   // Transform the group
+  // Setting group position does not work yet, only rotation. There is a bug
+  // with the below code where rotating a group with the below line
+  // uncommented does not line up the buddies anymore.
+  // group.position.copy(new Vector3(...(parentTransform?.position || [0, 0, 0])));
   group.rotation.copy(new Euler(...(parentTransform?.rotation || [0, 0, 0])));
-  // group.position.copy(new Vector3(...(parentTransform.position || [0, 0, 0])));
   group.updateMatrixWorld();
   group.updateWorldMatrix(true, true);
   group.updateMatrix();
@@ -307,63 +303,5 @@ export const applyParentTransformation = (
   child.getWorldQuaternion(wq);
   const eu = new Euler();
   eu.setFromQuaternion(wq);
-  const out = wp.toArray();
-  const translated = [
-    wp.x - parentTile.position[0],
-    wp.y - parentTile.position[1],
-    wp.z - parentTile.position[2],
-  ] as [number, number, number];
-  return [out, [eu.x, eu.y, eu.z] as [number, number, number]];
-
-  // const gp = parentTransform.position || [0, 0, 0];
-  // const gr = parentTransform.rotation || [0, 0, 0];
-
-  // // Unshift the object by the group position, since the object position is
-  // // already offset by the group position
-  // // const objPositionInGroupSpace = new Vector3(
-  // //   position[0] + parentTile.position[0],
-  // //   position[1] + parentTile.position[1],
-  // //   position[2] + parentTile.position[2],
-  // // );
-  // // const objPosition = new Vector3(...parentTile.position);
-  // const objRotation = new Euler(...rotation);
-
-  // const groupPosition = new Vector3(...gp);
-  // const groupRotation = new Euler(...gr);
-  // console.log('translating', { groupPosition, groupRotation });
-
-  // // Create a matrix for the group's transformation
-  // const groupMatrix = new Matrix4();
-  // groupMatrix.compose(
-  //   groupPosition,
-  //   new Quaternion().setFromEuler(groupRotation),
-  //   new Vector3(1, 1, 1), // scale, usually (1,1,1) unless you're scaling
-  // );
-
-  // // Create a matrix for the object
-  // const objMatrix = new Matrix4();
-  // objMatrix.compose(
-  //   objPositionInGroupSpace,
-  //   new Quaternion().setFromEuler(objRotation),
-  //   new Vector3(1, 1, 1),
-  // );
-
-  // // Multiply the matrices to get the world transform
-  // const worldMatrix = groupMatrix.multiply(objMatrix);
-
-  // // Extract world position and rotation
-  // const worldPosition = new Vector3();
-  // const worldRotation = new Euler();
-  // worldMatrix.decompose(worldPosition, new Quaternion(), new Vector3());
-  // worldRotation.setFromRotationMatrix(worldMatrix);
-
-  // return [
-  //   // Transform back to world space
-  //   [
-  //     worldPosition.x - parentTile.position[0],
-  //     worldPosition.y - parentTile.position[1],
-  //     worldPosition.z - parentTile.position[2],
-  //   ] as [number, number, number],
-  //   worldRotation.toArray() as [number, number, number],
-  // ];
+  return [wp.toArray(), [eu.x, eu.y, eu.z] as [number, number, number]];
 };
