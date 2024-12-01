@@ -30,6 +30,7 @@ import {
   useGameStore,
   useKeyPress,
   GateTile,
+  RailTile,
 } from '@/store/gameStore';
 import { toScreen } from '@/util/math';
 import OnScreenArrows from './OnScreenArrows';
@@ -42,6 +43,9 @@ import errorSfx from '@/public/error.mp3';
 import successSfx from '@/public/success.mp3';
 import metalSfx from '@/public/metal-hit-17.mp3';
 import metal2Sfx from '@/public/metal-hit-40.mp3';
+import springboardSfx from '@/public/springboard.mp3';
+import gadget1Sfx from '@/public/gadget-1.mp3';
+import gadget2Sfx from '@/public/gadget-2.mp3';
 
 import cx from 'classnames';
 import Toggle from './Tiles/Toggle';
@@ -94,7 +98,7 @@ const Game = () => {
   const resetLevel = useGameStore((state) => state.resetLevel);
   const setScreenArrows = useGameStore((state) => state.setScreenArrows);
   const setCurveProgress = useGameStore((state) => state.setCurveProgress);
-  const setCurrentTile = useGameStore((state) => state.setCurrentTile);
+  const setCurrentTileId = useGameStore((state) => state.setCurrentTileId);
   const currentCurveIndex = useGameStore((state) => state.currentCurveIndex);
   const levels = useGameStore((state) => state.levels);
   const setCurrentLevelId = useGameStore((state) => state.setCurrentLevelId);
@@ -102,7 +106,7 @@ const Game = () => {
     (state) => state.setCurrentCurveIndex,
   );
   const debug = useGameStore((state) => state.debug);
-  const currentTile = useGameStore((state) => state.currentTile);
+  const currentTileId = useGameStore((state) => state.currentTileId);
   const currentLevelId = useGameStore((state) => state.currentLevelId);
   const setMomentum = useGameStore((state) => state.setMomentum);
   const setEnteredFrom = useGameStore((state) => state.setEnteredFrom);
@@ -118,6 +122,18 @@ const Game = () => {
   const marbleRef = useRef<Mesh>(null);
   const orbit = useRef<OrbitControlsImpl>(null);
   const { camera, viewport } = useThree();
+
+  const level = useMemo(() => {
+    if (currentLevelId) {
+      return levels.find((l) => l.id === currentLevelId);
+    }
+  }, [levels, currentLevelId]);
+
+  const currentTile = useMemo(() => {
+    if (currentTileId && level) {
+      return level.tiles.find((t): t is TrackTile => t.id === currentTileId);
+    }
+  }, [currentTileId, level]);
 
   const currentCurve = useMemo(() => {
     if (currentTile) {
@@ -137,12 +153,6 @@ const Game = () => {
     [tilesComputed, currentTile, bonkBackTo],
   );
 
-  const level = useMemo(() => {
-    if (currentLevelId) {
-      return levels.find((l) => l.id === currentLevelId);
-    }
-  }, [levels, currentLevelId]);
-
   useKeyPress('edit', () => setIsEditing(!isEditing));
   useKeyPress('debug', toggleDebug);
   useKeyPress('backslash', () => {
@@ -156,6 +166,9 @@ const Game = () => {
   const [playSuccessSfx] = useSound(successSfx, { volume: 1 });
   const [playMetalHitSfx] = useSound(metalSfx, { volume: 0.1 });
   const [playMetalHit2Sfx] = useSound(metal2Sfx, { volume: 0.05 });
+  const [playSpringboardSfx] = useSound(springboardSfx, { volume: 0.75 });
+  const [playGadget1Sfx] = useSound(gadget1Sfx, { volume: 0.25 });
+  const [playGadget2Sfx] = useSound(gadget2Sfx, { volume: 0.25 });
 
   // Start game :(
   useEffect(() => {
@@ -356,6 +369,8 @@ const Game = () => {
               s.setEnabledBooleanSwitchesFor(-1, button.id, false);
 
               actions.forEach((action) => {
+                playGadget1Sfx();
+                playGadget2Sfx();
                 s.applyAction(currentTile, action);
               });
             } else if (!enabled && !isNear) {
@@ -483,6 +498,15 @@ const Game = () => {
           } else if (s.enteredFrom === -1) {
             nextId = currentTile.connections[s.nextConnection!];
             nextEntrance = currentTile.entrances[s.nextConnection!];
+
+            if (!nextId || nextEntrance === undefined) {
+              playSpringboardSfx();
+              setMomentum(s.playerMomentum > 0 ? -PLAYER_SPEED : PLAYER_SPEED);
+              setEnteredFrom(s.nextConnection!);
+              setNextConnection(-1);
+              // Another an option
+              // s.resetLevel();
+            }
           }
         } else {
           // We're on a straightaway
@@ -491,6 +515,13 @@ const Game = () => {
           nextIdx = isPositive ? 1 : 0;
           nextId = currentTile.connections[nextIdx];
           nextEntrance = currentTile.entrances[nextIdx];
+
+          if (!nextId || nextEntrance === undefined) {
+            playSpringboardSfx();
+            setMomentum(s.playerMomentum > 0 ? -PLAYER_SPEED : PLAYER_SPEED);
+            setEnteredFrom(s.nextConnection!);
+            setNextConnection(s.nextConnection === 0 ? 1 : 0);
+          }
         }
 
         // If we detected there is somewhere to go...
@@ -510,7 +541,7 @@ const Game = () => {
             throw new Error('bad next tile');
           }
 
-          setCurrentTile(nextTile);
+          setCurrentTileId(nextTile.id);
 
           // If connecting to a striaght tile
           if (isRailTile(nextTile)) {
@@ -647,31 +678,24 @@ const Game = () => {
 
       {debug &&
         level &&
-        level.tiles.map((tile) => (
-          <group key={tile.id}>
-            {tile.type !== 'box' && tile.type !== 'sphere' && (
-              <Html
-                className={cx('bg-slate-900 idOverlay')}
-                position={tile.position}
-              >
-                {tile.id}
-              </Html>
-            )}
-            {isRailTile(tile) ? (
-              <mesh>
-                <tubeGeometry
-                  args={[
-                    tilesComputed[tile.id]?.curves?.[0],
-                    70,
-                    0.01,
-                    50,
-                    false,
+        level.tiles.map((tile) => {
+          const offset = level.tiles.find((t) => t.id === tile.parentId)
+            ?.position || [0, 0, 0];
+          return (
+            <group key={tile.id}>
+              {tile.type !== 'box' && tile.type !== 'sphere' && (
+                <Html
+                  className={cx('bg-slate-900 idOverlay')}
+                  position={[
+                    tile.position[0] + offset[0],
+                    tile.position[1] + offset[1],
+                    tile.position[2] + offset[2],
                   ]}
-                />
-                <meshStandardMaterial color="blue" wireframe />
-              </mesh>
-            ) : (
-              <group>
+                >
+                  {tile.id}
+                </Html>
+              )}
+              {isRailTile(tile) ? (
                 <mesh>
                   <tubeGeometry
                     args={[
@@ -684,34 +708,49 @@ const Game = () => {
                   />
                   <meshStandardMaterial color="blue" wireframe />
                 </mesh>
-                <mesh>
-                  <tubeGeometry
-                    args={[
-                      tilesComputed[tile.id]?.curves?.[1],
-                      70,
-                      0.01,
-                      50,
-                      false,
-                    ]}
-                  />
-                  <meshStandardMaterial color="blue" wireframe />
-                </mesh>
-                <mesh>
-                  <tubeGeometry
-                    args={[
-                      tilesComputed[tile.id]?.curves?.[2],
-                      70,
-                      0.01,
-                      50,
-                      false,
-                    ]}
-                  />
-                  <meshStandardMaterial color="blue" wireframe />
-                </mesh>
-              </group>
-            )}
-          </group>
-        ))}
+              ) : (
+                <group>
+                  <mesh>
+                    <tubeGeometry
+                      args={[
+                        tilesComputed[tile.id]?.curves?.[0],
+                        70,
+                        0.01,
+                        50,
+                        false,
+                      ]}
+                    />
+                    <meshStandardMaterial color="blue" wireframe />
+                  </mesh>
+                  <mesh>
+                    <tubeGeometry
+                      args={[
+                        tilesComputed[tile.id]?.curves?.[1],
+                        70,
+                        0.01,
+                        50,
+                        false,
+                      ]}
+                    />
+                    <meshStandardMaterial color="blue" wireframe />
+                  </mesh>
+                  <mesh>
+                    <tubeGeometry
+                      args={[
+                        tilesComputed[tile.id]?.curves?.[2],
+                        70,
+                        0.01,
+                        50,
+                        false,
+                      ]}
+                    />
+                    <meshStandardMaterial color="blue" wireframe />
+                  </mesh>
+                </group>
+              )}
+            </group>
+          );
+        })}
 
       {debug && currentTile && (
         <mesh position={currentTile.position}>

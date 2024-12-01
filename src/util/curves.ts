@@ -236,32 +236,12 @@ export const computeTrackTile = (
   let rotation = transform?.rotation || tile.rotation;
 
   if (parentTile) {
-    const [xposition, xrotation] = applyParentTransformation(
+    [position, rotation] = applyParentTransformation(
       position,
       rotation,
       parentTile,
       parentTransform,
     );
-    if (
-      position[0] === xposition[0] &&
-      position[1] === xposition[1] &&
-      position[2] === xposition[2]
-    ) {
-      console.log('no pos change to tile', tile);
-    } else {
-      console.log('✅ pos change applied to tile', tile);
-    }
-    if (
-      rotation[0] === xrotation[0] &&
-      rotation[1] === xrotation[1] &&
-      rotation[2] === xrotation[2]
-    ) {
-      console.log('no rotation change to tile', tile, { transform });
-    } else {
-      console.log('✅ rot change applied to tile', tile);
-    }
-    position = xposition;
-    rotation = xrotation;
   }
 
   if (tile.type === 'cap') {

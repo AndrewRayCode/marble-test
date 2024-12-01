@@ -188,7 +188,13 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
           (as, a) => ('targetTiles' in a ? [...as, ...a.targetTiles] : as),
           [],
         )
-      : [];
+      : selectedTile?.parentId
+        ? [selectedTile.parentId]
+        : selectedTile?.type === 'group'
+          ? level?.tiles
+              .filter((t) => t.parentId === selectedTile.id)
+              .map((t) => t.id)
+          : [];
 
   const [gridPosition, setGridPosition] = useState([
     TILE_HALF_WIDTH,
@@ -525,7 +531,11 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
               {targetTileIds?.includes(tile.id) && (
                 <mesh>
                   <boxGeometry args={[1, 1, 1]} />
-                  <meshBasicMaterial color={'blue'} transparent opacity={0.5} />
+                  <meshBasicMaterial
+                    color={'blue'}
+                    transparent
+                    opacity={0.25}
+                  />
                 </mesh>
               )}
               <mesh

@@ -228,7 +228,7 @@ export const EditorUI = ({
             <div>
               <select
                 className={cx(styles.input, 'mb-2 w-full')}
-                value={currentLevelId!}
+                value={currentLevelId || ''}
                 onChange={(e) => {
                   setCurrentLevelId(e.target.value);
                 }}
@@ -266,8 +266,9 @@ export const EditorUI = ({
           <div className="grid grid-cols-[1fr_max-content_max-content] grid-cols-2 gap-2">
             <div>
               <input
+                type="text"
                 className={cx(styles.input, 'mb-2 w-full')}
-                value={level?.name}
+                value={level?.name || ''}
                 onChange={(e) => {
                   updateCurrentLevel({
                     name: e.target.value,

@@ -208,8 +208,8 @@ export interface GameStore {
   setCurrentLevelId: (levelId: string) => void;
   curveProgress: number;
   setCurveProgress: (progress: number) => void;
-  currentTile: TrackTile | null;
-  setCurrentTile: (tile: TrackTile) => void;
+  currentTileId: string | null;
+  setCurrentTileId: (id: string) => void;
   currentCurveIndex: number;
   setCurrentCurveIndex: (index: number) => void;
   tilesComputed: Record<string, TileComputed>;
@@ -469,8 +469,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   curveProgress: 0,
   setCurveProgress: (progress) => set({ curveProgress: progress }),
-  currentTile: null,
-  setCurrentTile: (tile) => set({ currentTile: tile }),
+  currentTileId: null,
+  setCurrentTileId: (currentTileId) => set({ currentTileId }),
 
   currentCurveIndex: 0,
   setCurrentCurveIndex: (currentCurveIndex) => set({ currentCurveIndex }),
@@ -736,7 +736,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ) as TrackTile;
       console.log('Game reset! Starting on', { currentTile });
       return {
-        level,
         curveProgress:
           currentTile.type === 'cap' || currentTile.type === 't' ? 1 : 0,
         currentCurveIndex: 0,
@@ -750,8 +749,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         collectedItems: new Set(),
         gateStates: {},
         tilesComputed,
-        currentTile,
-      };
+        currentTileId: currentTile.id,
+      } satisfies Partial<GameStore>;
     }),
 }));
 

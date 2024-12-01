@@ -4,7 +4,7 @@ import { Html } from '@react-three/drei';
 import { useEffect, useMemo } from 'react';
 import cx from 'classnames';
 
-import { useGameStore } from '@/store/gameStore';
+import { TrackTile, useGameStore } from '@/store/gameStore';
 import { useRefMap } from '@/util/react';
 
 import styles from './styles.module.css';
@@ -23,11 +23,20 @@ const arrowLookup = {
  * dependent on their relative screen position
  */
 const OnScreenArrows = () => {
-  const currentTile = useGameStore((state) => state.currentTile);
+  const level = useGameStore((state) =>
+    state.levels.find((l) => l.id === state.currentLevelId),
+  );
+  const currentTileId = useGameStore((state) => state.currentTileId);
   const tilesComputed = useGameStore((state) => state.tilesComputed);
   const [arrowRefs, setArrowRef] = useRefMap<Group>();
   const [htmlRefs, setHtmlRefs] = useRefMap<HTMLDivElement>();
   const bonkBackTo = useGameStore((state) => state.bonkBackTo);
+
+  const currentTile = useMemo(() => {
+    if (currentTileId && level) {
+      return level.tiles.find((t): t is TrackTile => t.id === currentTileId);
+    }
+  }, [currentTileId, level]);
 
   // For every exit position of this junction, there is a *potential* arrow
   // to show
