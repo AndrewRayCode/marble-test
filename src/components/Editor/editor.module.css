@@ -56,7 +56,7 @@
 }
 .toolbarButton {
   background: rgb(37 99 235 / 1);
-  box-shadow: inset 0 0.5px 0.5px rgba(255, 255, 255, 0.5);
+  box-shadow: inset 0 0.5px 0.5px rgba(226, 232, 255, 0.5);
 }
 .toolbarButton.destructive {
   background: rgb(239 68 68 / 1);
@@ -89,14 +89,28 @@
   background: rgb(55, 65, 81);
   color: #fff;
   border: 0.666667px solid rgb(75, 85, 99);
+  box-shadow: inset 0 0.5px 0.5px rgba(226, 232, 255, 0.5);
   border-radius: 0.5rem;
   box-sizing: border-box;
-  padding: 0.625rem;
+  padding: 0.45rem;
 }
+
 .input:focus,
 .select:focus {
   box-shadow: rgb(63, 131, 248) 0px 0px 0px 1px;
   outline: 2px solid transparent;
   outline-offset: 2px;
   border-color: rgb(63, 131, 248);
+}
+
+.input[type='text']:not(:disabled) {
+  box-shadow:
+    inset 0 0.5px 0.5px rgba(226, 232, 255, 0.5),
+    inset 0 2px 6px rgba(7, 7, 33, 0.712);
+}
+.input[type='text']:not(:disabled):focus {
+  box-shadow:
+    inset 0 0.5px 0.5px rgba(226, 232, 255, 0.5),
+    inset 0 2px 6px rgba(0, 0, 0, 0.712),
+    rgb(63, 131, 248) 0px 0px 0px 1px;
 }

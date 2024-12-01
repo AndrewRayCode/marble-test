@@ -66,7 +66,7 @@ const Cap = ({ tile, opacity }: { tile: CapTile; opacity?: number }) => {
     >
       <group position={exit} ref={setExitRef(0)}></group>
       {debug && (
-        <mesh>
+        <mesh castShadow>
           <boxGeometry args={[1, 1, 1]} />
           <meshStandardMaterial
             opacity={matOpacity}
@@ -78,6 +78,7 @@ const Cap = ({ tile, opacity }: { tile: CapTile; opacity?: number }) => {
       )}
       {['back', 'front', 'left', 'right'].includes(showSides) ? (
         <mesh
+          castShadow
           position={
             showSides === 'back'
               ? [-pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]
@@ -111,6 +112,7 @@ const Cap = ({ tile, opacity }: { tile: CapTile; opacity?: number }) => {
       {['all'].includes(showSides) ? (
         <group>
           <mesh
+            castShadow
             position={[-pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}
             scale={[CROSS_SCALE, CROSS_SCALE, CROSS_SCALE]}
             rotation={[0, Math.PI / 4, 0]}
@@ -127,6 +129,7 @@ const Cap = ({ tile, opacity }: { tile: CapTile; opacity?: number }) => {
             <primitive object={railMat} />
           </mesh>
           <mesh
+            castShadow
             position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}
             scale={[CROSS_SCALE, CROSS_SCALE, CROSS_SCALE]}
             rotation={[0, 0.75 * Math.PI, 0]}

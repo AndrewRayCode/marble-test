@@ -64,7 +64,13 @@ export const EditorUI = ({
           display: enabled ? '' : 'none',
         }}
       >
-        <div className={cx(styles.toolbarItem, styles.keyboard, 'bg-gray-700')}>
+        <div
+          className={cx(
+            styles.toolbarItem,
+            styles.keyboard,
+            'bg-gray-700 block',
+          )}
+        >
           <div className="key">g</div> <div>Rotate Grid</div>
         </div>
         {selectedTileId && (
@@ -86,112 +92,127 @@ export const EditorUI = ({
         >
           <div className="key">a</div> <div>Add</div>
         </div>
-        {showCursor && [
-          <div
-            className={cx(styles.toolbarButton, styles.keyboard, {
-              [styles.selected]: createType === 't',
-            })}
-            key="jnct"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setCreateType('t');
-            }}
-          >
-            <div className="key">j</div> <div>Junction</div>
-          </div>,
-          <div
-            className={cx(styles.toolbarButton, styles.keyboard, {
-              [styles.selected]: createType === 'straight',
-            })}
-            key="str8"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setCreateType('straight');
-            }}
-          >
-            <div className="key">g</div> <div>Straight</div>
-          </div>,
-          <div
-            className={cx(styles.toolbarButton, styles.keyboard, {
-              [styles.selected]: createType === 'quarter',
-            })}
-            key="qrtr"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setCreateType('quarter');
-            }}
-          >
-            <div className="key">q</div> <div>Turn</div>
-          </div>,
-          <div
-            className={cx(styles.toolbarButton, styles.keyboard, {
-              [styles.selected]: createType === 'button',
-            })}
-            key="btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setCreateType('button');
-            }}
-          >
-            <div className="key">b</div> <div>Button</div>
-          </div>,
-          <div
-            className={cx(styles.toolbarButton, {
-              [styles.selected]: createType === 'box',
-            })}
-            key="box"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setCreateType('box');
-            }}
-          >
-            <div>Box</div>
-          </div>,
-          <div
-            className={cx(styles.toolbarButton, {
-              [styles.selected]: createType === 'sphere',
-            })}
-            key="sphr"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setCreateType('sphere');
-            }}
-          >
-            <div>Sphere</div>
-          </div>,
-          <div
-            className={cx(styles.toolbarButton, {
-              [styles.selected]: createType === 'coin',
-            })}
-            key="coin"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setCreateType('coin');
-            }}
-          >
-            <div>Coin</div>
-          </div>,
-          <div
-            className={cx(styles.toolbarButton, {
-              [styles.selected]: createType === 'gate',
-            })}
-            key="gat"
-            onClick={(e) => {
-              e.stopPropagation();
-              e.preventDefault();
-              setCreateType('gate');
-            }}
-          >
-            <div>Gate</div>
-          </div>,
-        ]}
+        {showCursor && (
+          <div className="flex gap-2 flex-wrap">
+            <div
+              className={cx(styles.toolbarButton, styles.keyboard, {
+                [styles.selected]: createType === 't',
+              })}
+              key="jnct"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setCreateType('t');
+              }}
+            >
+              <div className="key">j</div> <div>Junction</div>
+            </div>
+            <div
+              className={cx(styles.toolbarButton, styles.keyboard, {
+                [styles.selected]: createType === 'straight',
+              })}
+              key="str8"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setCreateType('straight');
+              }}
+            >
+              <div className="key">g</div> <div>Straight</div>
+            </div>
+            <div
+              className={cx(styles.toolbarButton, styles.keyboard, {
+                [styles.selected]: createType === 'quarter',
+              })}
+              key="qrtr"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setCreateType('quarter');
+              }}
+            >
+              <div className="key">q</div> <div>Turn</div>
+            </div>
+            <div
+              className={cx(styles.toolbarButton, styles.keyboard, {
+                [styles.selected]: createType === 'button',
+              })}
+              key="btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setCreateType('button');
+              }}
+            >
+              <div className="key">b</div> <div>Button</div>
+            </div>
+            <div
+              className={cx(styles.toolbarButton, {
+                [styles.selected]: createType === 'group',
+              })}
+              key="grp"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setCreateType('group');
+              }}
+            >
+              <div>Group</div>
+            </div>
+            <div
+              className={cx(styles.toolbarButton, {
+                [styles.selected]: createType === 'box',
+              })}
+              key="box"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setCreateType('box');
+              }}
+            >
+              <div>Box</div>
+            </div>
+            <div
+              className={cx(styles.toolbarButton, {
+                [styles.selected]: createType === 'sphere',
+              })}
+              key="sphr"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setCreateType('sphere');
+              }}
+            >
+              <div>Sphere</div>
+            </div>
+            <div
+              className={cx(styles.toolbarButton, {
+                [styles.selected]: createType === 'coin',
+              })}
+              key="coin"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setCreateType('coin');
+              }}
+            >
+              <div>Coin</div>
+            </div>
+            <div
+              className={cx(styles.toolbarButton, {
+                [styles.selected]: createType === 'gate',
+              })}
+              key="gat"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setCreateType('gate');
+              }}
+            >
+              <div>Gate</div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Sidebar */}
@@ -207,7 +228,7 @@ export const EditorUI = ({
             <div>
               <select
                 className={cx(styles.input, 'mb-2 w-full')}
-                value={currentLevelId!}
+                value={currentLevelId || ''}
                 onChange={(e) => {
                   setCurrentLevelId(e.target.value);
                 }}
@@ -245,8 +266,9 @@ export const EditorUI = ({
           <div className="grid grid-cols-[1fr_max-content_max-content] grid-cols-2 gap-2">
             <div>
               <input
+                type="text"
                 className={cx(styles.input, 'mb-2 w-full')}
-                value={level?.name}
+                value={level?.name || ''}
                 onChange={(e) => {
                   updateCurrentLevel({
                     name: e.target.value,

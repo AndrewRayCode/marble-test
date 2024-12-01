@@ -21,7 +21,7 @@ export const toWorld = (object: Object3D) => {
 export const toScreen = (
   position: Vector3,
   camera: Camera,
-  viewport: Viewport,
+  viewport: { width: number; height: number },
 ) => {
   const vector = position.clone();
   vector.project(camera);

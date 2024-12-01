@@ -22,10 +22,11 @@ import {
   CoinTile,
   GateTile,
   SphereTile,
+  GroupTile,
 } from '@/store/gameStore';
 
 import { useRefMap } from '@/util/react';
-import { DoubleSide, Euler, Group, Mesh, Vector3 } from 'three';
+import { DoubleSide, Euler, Group as ThreeGroup, Vector3 } from 'three';
 
 import { TILE_HALF_WIDTH } from '@/game/constants';
 import Straightaway from '../Tiles/Straightaway';
@@ -37,6 +38,7 @@ import Box from '../Tiles/Box';
 import Coin from '../Tiles/Coin';
 import Gate from '../Tiles/Gate';
 import Sphere from '../Tiles/Sphere';
+import Group from '../Tiles/Group';
 
 type EditorProps = {
   setOrbitEnabled: (enabled: boolean) => void;
@@ -65,6 +67,7 @@ const defaultStraightTile: RailTile = {
   position: [0, 0, 0],
   rotation: [0, 0, 0],
   type: 'straight',
+  parentId: null,
   showSides: 'all' as Side,
   connections: [null, null],
   entrances: [null, null],
@@ -74,6 +77,7 @@ const defaultQuarterTile: RailTile = {
   position: [0, 0, 0],
   rotation: [0, 0, 0],
   type: 'quarter',
+  parentId: null,
   showSides: 'all' as Side,
   connections: [null, null],
   entrances: [null, null],
@@ -83,6 +87,7 @@ const defaultJunctionTile: JunctionTile = {
   position: [0, 0, 0],
   rotation: [0, 0, 0],
   type: 't',
+  parentId: null,
   showSides: 'all' as Side,
   connections: [null, null, null],
   entrances: [null, null, null],
@@ -92,6 +97,7 @@ const defaultButtonTile: ButtonTile = {
   position: [0, 0, 0],
   rotation: [0, 0, 0],
   type: 'button',
+  parentId: null,
   actionType: 'toggle',
   actions: [],
 };
@@ -100,6 +106,7 @@ const defaultCapTile: CapTile = {
   position: [0, 0, 0],
   rotation: [0, 0, 0],
   type: 'cap',
+  parentId: null,
   showSides: 'all' as Side,
   connections: [null],
   entrances: [null],
@@ -109,6 +116,7 @@ const defaultBoxTile: BoxTile = {
   position: [0, 0, 0],
   rotation: [0, 0, 0],
   type: 'box',
+  parentId: null,
   color: '#ffffff',
 };
 const defaultSphereTile: SphereTile = {
@@ -116,6 +124,7 @@ const defaultSphereTile: SphereTile = {
   position: [0, 0, 0],
   rotation: [0, 0, 0],
   type: 'sphere',
+  parentId: null,
   color: '#ffffff',
 };
 const defaultCoinTile: CoinTile = {
@@ -123,13 +132,22 @@ const defaultCoinTile: CoinTile = {
   position: [0, 0, 0],
   rotation: [0, 0, 0],
   type: 'coin',
+  parentId: null,
 };
 const defaultGateTile: GateTile = {
   id: `editor_cursor_${makeId()}`,
   position: [0, 0, 0],
   rotation: [0, 0, 0],
   type: 'gate',
+  parentId: null,
   defaultState: 'closed',
+};
+const defaultGroupTile: GroupTile = {
+  id: `editor_cursor_${makeId()}`,
+  position: [0, 0, 0],
+  rotation: [0, 0, 0],
+  type: 'group',
+  parentId: null,
 };
 
 const TransformMemoized = memo(
@@ -155,7 +173,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
   const setShowCursor = useGameStore((state) => state.setShowCursor);
   const createType = useGameStore((state) => state.createType);
   const autoSnap = useGameStore((state) => state.autoSnap);
-  const [tileRefs, setTileRefs] = useRefMap<Group>();
+  const [tileRefs, setTileRefs] = useRefMap<ThreeGroup>();
 
   const level = useMemo(() => {
     if (currentLevelId) {
@@ -170,7 +188,13 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
           (as, a) => ('targetTiles' in a ? [...as, ...a.targetTiles] : as),
           [],
         )
-      : [];
+      : selectedTile?.parentId
+        ? [selectedTile.parentId]
+        : selectedTile?.type === 'group'
+          ? level?.tiles
+              .filter((t) => t.parentId === selectedTile.id)
+              .map((t) => t.id)
+          : [];
 
   const [gridPosition, setGridPosition] = useState([
     TILE_HALF_WIDTH,
@@ -329,6 +353,7 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
                 position: cursorSnappedPosition,
                 rotation: cursorRotation,
                 type: '',
+                parentId: null,
               };
               if (createType === 'straight' || createType === 'quarter') {
                 addTile({
@@ -366,6 +391,11 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
                   ...base,
                   type: createType,
                   color: '#ffffff',
+                });
+              } else if (createType === 'group') {
+                addTile({
+                  ...base,
+                  type: createType,
                 });
               } else if (createType === 'sphere') {
                 addTile({
@@ -409,6 +439,8 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
             <Coin tile={defaultCoinTile} opacity={0.25} />
           ) : createType === 'gate' ? (
             <Gate tile={defaultGateTile} opacity={0.25} />
+          ) : createType === 'group' ? (
+            <Group tile={defaultGroupTile} opacity={0.25} />
           ) : null}
         </group>
       )}
@@ -432,14 +464,18 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
             onChange={(e) => {
               const target = tileRefs.get(selectedTileId!);
               if (target) {
+                const parent =
+                  selectedTile!.parentId !== null
+                    ? level!.tiles.find((t) => t.id === selectedTile!.parentId)
+                    : null;
                 updateTileAndRecompute(
                   selectedTileId!,
                   transformMode === 'translate'
                     ? {
                         position: [
-                          target.position.x,
-                          target.position.y,
-                          target.position.z,
+                          target.position.x - (parent ? parent.position[0] : 0),
+                          target.position.y - (parent ? parent.position[1] : 0),
+                          target.position.z - (parent ? parent.position[2] : 0),
                         ],
                       }
                     : transformMode === 'rotate'
@@ -469,6 +505,10 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
 
       {level &&
         level.tiles.map((tile) => {
+          const parent =
+            tile.parentId !== null
+              ? level.tiles.find((t) => t.id === tile.parentId)
+              : null;
           return (
             <group
               key={tile.id}
@@ -479,7 +519,11 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
                 always visible, it stores the transform position and rotation.
                 Something better would be to read the rotation ref from the
                 tile itself. */
-              position={tile.position}
+              position={[
+                tile.position[0] + (parent ? parent.position[0] : 0),
+                tile.position[1] + (parent ? parent.position[1] : 0),
+                tile.position[2] + (parent ? parent.position[2] : 0),
+              ]}
               rotation={tile.rotation}
               scale={tile.scale}
               ref={setTileRefs(tile.id)}
@@ -487,7 +531,11 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
               {targetTileIds?.includes(tile.id) && (
                 <mesh>
                   <boxGeometry args={[1, 1, 1]} />
-                  <meshBasicMaterial color={'blue'} transparent opacity={0.5} />
+                  <meshBasicMaterial
+                    color={'blue'}
+                    transparent
+                    opacity={0.25}
+                  />
                 </mesh>
               )}
               <mesh

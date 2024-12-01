@@ -194,18 +194,35 @@ export const TileEditor = ({ selectedTileId }: { selectedTileId: string }) => {
   const updateTileAndRecompute = useGameStore(
     (state) => state.updateTileAndRecompute,
   );
+  const groupTile = useGameStore((state) => state.groupTile);
+  const ungroupTile = useGameStore((state) => state.ungroupTile);
 
   if (!selectedTile) {
     return <div>Tile &quot;{selectedTileId}&quot; not found!</div>;
   }
 
   return (
-    <div>
+    <div key={selectedTile.id}>
       <div className="mb-3">
         <label className="text-slate-400">Id</label> {selectedTile.id}
       </div>
       <div className="mb-3">
         <label className="text-slate-400">Type</label> {selectedTile.type}
+      </div>
+      <div>
+        <label className="text-slate-400">Parent ID</label>
+        <input
+          className={cx(styles.input, 'mb-2 w-full')}
+          value={selectedTile.parentId || ''}
+          onChange={(e) => {
+            if (e.target.value) {
+              groupTile(selectedTileId, e.target.value);
+            } else {
+              ungroupTile(selectedTileId);
+            }
+          }}
+          type="text"
+        />
       </div>
       {selectedTile.type === 'gate' && (
         <div>
@@ -368,7 +385,7 @@ export const TileEditor = ({ selectedTileId }: { selectedTileId: string }) => {
                     </label>
                     <input
                       className={cx(styles.input, 'mb-2 w-full')}
-                      value={connection!}
+                      value={connection || ''}
                       onChange={(e) => {
                         updateTileAndRecompute(selectedTileId, {
                           connections: selectedTile.connections.map((c, j) =>
@@ -381,7 +398,7 @@ export const TileEditor = ({ selectedTileId }: { selectedTileId: string }) => {
                     <label className="mb-1 block text-xs">Other Entrance</label>
                     <select
                       className={cx(styles.input, 'mb-2 w-full')}
-                      value={selectedTile.entrances[i]!}
+                      value={selectedTile.entrances[i] || ''}
                       onChange={(e) => {
                         updateTileAndRecompute(selectedTileId, {
                           entrances: selectedTile.entrances.map((c, j) =>

@@ -30,7 +30,7 @@ const Box = ({ tile, opacity }: { tile: BoxTile; opacity?: number }) => {
     >
       {style === 'grass' ? (
         <group>
-          <mesh position={[0, 0.4, 0]}>
+          <mesh receiveShadow position={[0, 0.4, 0]}>
             <boxGeometry args={[1, 0.2, 1]} />
             <meshStandardMaterial
               roughness={0.5}
@@ -39,7 +39,7 @@ const Box = ({ tile, opacity }: { tile: BoxTile; opacity?: number }) => {
               color={color}
             />
           </mesh>
-          <mesh position={[0, -0.1, 0]}>
+          <mesh receiveShadow position={[0, -0.1, 0]}>
             <boxGeometry args={[1, 0.8, 1]} />
             <meshStandardMaterial
               roughness={0.1}
@@ -50,7 +50,7 @@ const Box = ({ tile, opacity }: { tile: BoxTile; opacity?: number }) => {
           </mesh>
         </group>
       ) : (
-        <mesh>
+        <mesh receiveShadow>
           <boxGeometry args={[1, 1, 1]} />
           <meshStandardMaterial
             roughness={0.5}

@@ -48,6 +48,7 @@ export type TileBase = {
   position: [number, number, number];
   rotation: [number, number, number];
   scale?: [number, number, number];
+  parentId: string | null;
   type: string;
 };
 
@@ -83,6 +84,10 @@ export type CapTile = TileBase & {
   showSides: Side;
   connections: [NullStr];
   entrances: [NullNum];
+};
+
+export type GroupTile = TileBase & {
+  type: 'group';
 };
 
 export type BoxTile = TileBase & {
@@ -129,6 +134,7 @@ export type Tile =
   | TrackTile
   | ButtonTile
   | BoxTile
+  | GroupTile
   | SphereTile
   | CoinTile
   | GateTile;
@@ -142,7 +148,6 @@ export type Level = Omit<DbLevel, 'id' | 'data'> & {
 };
 
 export type ScreenArrow = {
-  d: number;
   position: Vector3;
   entrance: number;
   arrow: 'up' | 'down' | 'left' | 'right';
@@ -176,6 +181,8 @@ export interface GameStore {
   setIsEditing: (isEditing: boolean) => void;
   addTile: (tile: Tile) => void;
   deleteTile: (tileId: string) => void;
+  groupTile: (tileId: string, parentId: string) => void;
+  ungroupTile: (tileId: string) => void;
   updateTileAction: <T extends Action>(
     tileId: string,
     actionIdx: number,
@@ -200,8 +207,8 @@ export interface GameStore {
   setCurrentLevelId: (levelId: string) => void;
   curveProgress: number;
   setCurveProgress: (progress: number) => void;
-  currentTile: TrackTile | null;
-  setCurrentTile: (tile: TrackTile) => void;
+  currentTileId: string | null;
+  setCurrentTileId: (id: string) => void;
   currentCurveIndex: number;
   setCurrentCurveIndex: (index: number) => void;
   tilesComputed: Record<string, TileComputed>;
@@ -317,19 +324,82 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const s = get();
     const level = s.levels.find((l) => l.id === s.currentLevelId)!;
     if (isRailTile(tile) || isJunctionTile(tile)) {
-      s.setTileComputed(tile.id, computeTrackTile(tile));
+      s.setTileComputed(tile.id, computeTrackTile(tile, null, null, null));
     }
     s.updateCurrentLevel({ tiles: [...level.tiles, tile] });
   },
   deleteTile: (tileId: string) => {
     const s = get();
     const level = s.levels.find((l) => l.id === s.currentLevelId)!;
+    const tile = level.tiles.find((t) => t.id === tileId);
     const tilesComputed = { ...s.tilesComputed };
     delete tilesComputed[tileId];
     s.setTilesComputed(tilesComputed);
     s.updateCurrentLevel({
-      tiles: level.tiles.filter((tile) => tile.id !== tileId),
+      tiles: level.tiles
+        .filter((tile) => tile.id !== tileId)
+        .map((tile) => {
+          {
+            if (tile.parentId === tileId) {
+              return {
+                ...tile,
+                position: [
+                  tile.position[0] + tile.position[0],
+                  tile.position[1] + tile.position[1],
+                  tile.position[2] + tile.position[2],
+                ],
+                parentId: null,
+              };
+            }
+            return tile;
+          }
+        }),
     });
+  },
+  groupTile: (tileId, parentId) => {
+    const s = get();
+    const level = s.levels.find((l) => l.id === s.currentLevelId)!;
+    const parent = level.tiles.find(
+      (tile) => tile.id === parentId,
+    ) as GroupTile;
+    const tiles = level.tiles.map((tile) => {
+      if (tile.id === tileId) {
+        // add the child to the parent, but to keep the child's world position,
+        // subtract the group's position
+        return {
+          ...tile,
+          parentId,
+          position: [
+            tile.position[0] - parent.position[0],
+            tile.position[1] - parent.position[1],
+            tile.position[2] - parent.position[2],
+          ],
+        } as Tile;
+      }
+      return tile;
+    });
+    s.updateCurrentLevel({ tiles });
+  },
+  ungroupTile: (tileId) => {
+    const s = get();
+    const level = s.levels.find((l) => l.id === s.currentLevelId)!;
+    const tile = level.tiles.find((t) => t.id === tileId)!;
+    const group = level.tiles.find((t) => t.id === tile.parentId) as GroupTile;
+    const tiles = level.tiles.map((tile) => {
+      if (tile.id === tileId) {
+        return {
+          ...tile,
+          parentId: null,
+          position: [
+            tile.position[0] + group.position[0],
+            tile.position[1] + group.position[1],
+            tile.position[2] + group.position[2],
+          ],
+        } as Tile;
+      }
+      return tile;
+    });
+    s.updateCurrentLevel({ tiles });
   },
   updateTileAction: (tileId, actionIdx, action) => {
     const s = get();
@@ -361,7 +431,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
       tileId === tile.id ? updated : tile,
     );
     if (isRailTile(updated) || isJunctionTile(updated)) {
-      s.setTileComputed(updated.id, computeTrackTile(updated));
+      s.setTileComputed(
+        updated.id,
+        computeTrackTile(
+          updated,
+          s.transforms[updated.id],
+          level.tiles.find((t): t is GroupTile => t.id === updated.parentId!) ||
+            null,
+          s.transforms[updated.parentId!] || null,
+        ),
+      );
     }
     s.updateCurrentLevel({ tiles });
   },
@@ -389,8 +468,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
   curveProgress: 0,
   setCurveProgress: (progress) => set({ curveProgress: progress }),
-  currentTile: null,
-  setCurrentTile: (tile) => set({ currentTile: tile }),
+  currentTileId: null,
+  setCurrentTileId: (currentTileId) => set({ currentTileId }),
 
   currentCurveIndex: 0,
   setCurrentCurveIndex: (currentCurveIndex) => set({ currentCurveIndex }),
@@ -503,11 +582,43 @@ export const useGameStore = create<GameStore>((set, get) => ({
           rotation,
         };
 
-        const updatedComputed = {
-          ...s.tilesComputed,
-          [targetId]: computeTrackTile(target as RailTile, transform),
-        };
+        let updatedComputed = s.tilesComputed;
 
+        if (isRailTile(target) || isJunctionTile(target)) {
+          updatedComputed = {
+            ...s.tilesComputed,
+            [targetId]: computeTrackTile(
+              target as RailTile,
+              transform,
+              // Button targeting a tile in a group is not currently supported
+              null,
+              null,
+            ),
+          };
+        } else if (target.type === 'group') {
+          const tilesToUpdate = level.tiles.filter(
+            (t) => t.parentId === targetId,
+          );
+          const groupTile = target as GroupTile;
+          updatedComputed = tilesToUpdate.reduce(
+            (acc, tile) => ({
+              ...acc,
+              ...(isRailTile(tile) || isJunctionTile(tile)
+                ? {
+                    [tile.id]: computeTrackTile(
+                      tile as RailTile,
+                      // original tile transform, if any, probably shouldn't be any since it's in a group!
+                      s.transforms[tile.id],
+                      groupTile,
+                      // The updated group transform
+                      transform,
+                    ),
+                  }
+                : null),
+            }),
+            s.tilesComputed,
+          );
+        }
         s.setTilesComputed(updatedComputed);
         s.setTransform(targetId, transform);
         // If a transform applies rotation, re-snap the updated positions. Note
@@ -609,13 +720,17 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
       const level = state.levels.find((l) => l.id === state.currentLevelId)!;
       const tilesComputed = level.tiles.reduce<Record<string, TileComputed>>(
-        (acc, tile) =>
-          isRailTile(tile) || isJunctionTile(tile)
+        (acc, tile) => {
+          const parentTile =
+            level.tiles.find((t): t is GroupTile => t.id === tile.parentId) ||
+            null;
+          return isRailTile(tile) || isJunctionTile(tile)
             ? {
                 ...acc,
-                [tile.id]: computeTrackTile(tile),
+                [tile.id]: computeTrackTile(tile, null, parentTile, null),
               }
-            : acc,
+            : acc;
+        },
         {},
       );
 
@@ -624,7 +739,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
       ) as TrackTile;
       console.log('Game reset! Starting on', { currentTile });
       return {
-        level,
         curveProgress:
           currentTile.type === 'cap' || currentTile.type === 't' ? 1 : 0,
         currentCurveIndex: 0,
@@ -638,8 +752,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
         collectedItems: new Set(),
         gateStates: {},
         tilesComputed,
-        currentTile,
-      };
+        currentTileId: currentTile.id,
+      } satisfies Partial<GameStore>;
     }),
 }));
 

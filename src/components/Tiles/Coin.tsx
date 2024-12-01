@@ -42,7 +42,7 @@ const Coin = ({
       visible={visible === undefined ? true : visible}
     >
       <group ref={meshRef}>
-        <mesh rotation={[Math.PI / 2, 0, 0]}>
+        <mesh castShadow rotation={[Math.PI / 2, 0, 0]}>
           <cylinderGeometry
             args={[COIN_DIAMETER, COIN_DIAMETER, COIN_HEIGHT, 32]}
           />

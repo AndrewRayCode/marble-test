@@ -1,4 +1,5 @@
 import {
+  GroupTile,
   JunctionTile,
   TileComputed,
   TrackTile,
@@ -11,7 +12,9 @@ import {
   CatmullRomCurve3,
   CubicBezierCurve3,
   Euler,
+  Group,
   Matrix4,
+  Quaternion,
   Vector3,
 } from 'three';
 import { INITIAL_SPHERE_RADIUS, TILE_HALF_WIDTH } from '../game/constants';
@@ -75,8 +78,11 @@ export const useCurve = (curve: CubicBezierCurve3) => {
   }, [curve]);
 };
 
-export const curveForRailTile = (tile: TrackTile, transform?: Transform) => {
-  const rotation = transform?.rotation || tile.rotation;
+export const curveForRailTile = (
+  tile: TrackTile,
+  position: [number, number, number],
+  rotation: [number, number, number],
+) => {
   return translateCurve(
     rotateBezierCurve(
       tile.type === 'straight'
@@ -87,31 +93,23 @@ export const curveForRailTile = (tile: TrackTile, transform?: Transform) => {
       new Euler(rotation[0], rotation[1], rotation[2]),
       new Vector3(0, TILE_HALF_WIDTH, 0),
     ),
-    new Vector3(
-      tile.position[0],
-      tile.position[1] - TILE_HALF_WIDTH,
-      tile.position[2],
-    ),
+    new Vector3(position[0], position[1] - TILE_HALF_WIDTH, position[2]),
   );
 };
 
 export const curveForChoiceTile = (
   tile: JunctionTile,
   entrance: number,
-  transform?: Transform,
+  position: [number, number, number],
+  rotation: [number, number, number],
 ) => {
-  const rotation = transform?.rotation || tile.rotation;
   return translateCurve(
     rotateBezierCurve(
       tile.type === 't' ? tStraights[entrance] : tStraights[entrance],
       new Euler(rotation[0], rotation[1], rotation[2]),
       new Vector3(0, TILE_HALF_WIDTH, 0),
     ),
-    new Vector3(
-      tile.position[0],
-      tile.position[1] - TILE_HALF_WIDTH,
-      tile.position[2],
-    ),
+    new Vector3(position[0], position[1] - TILE_HALF_WIDTH, position[2]),
   );
 };
 
@@ -230,26 +228,80 @@ export const tStraights = [
 // Generate the computed / runtime data for this tile
 export const computeTrackTile = (
   tile: TrackTile,
-  transform?: Transform,
+  transform: Transform | null,
+  parentTile: GroupTile | null,
+  parentTransform: Transform | null,
 ): TileComputed => {
+  let position = transform?.position || tile.position;
+  let rotation = transform?.rotation || tile.rotation;
+
+  if (parentTile) {
+    [position, rotation] = applyParentTransformation(
+      position,
+      rotation,
+      parentTile,
+      parentTransform,
+    );
+  }
+
   if (tile.type === 'cap') {
-    const curve = curveForRailTile(tile, transform);
+    const curve = curveForRailTile(tile, position, rotation);
     return {
       curves: [curve],
       exits: [curve.getPointAt(0)],
     };
   } else if (isRailTile(tile)) {
-    const curve = curveForRailTile(tile, transform);
+    const curve = curveForRailTile(tile, position, rotation);
     return {
       curves: [curve],
       exits: [curve.getPointAt(0), curve.getPointAt(1)],
     };
   } else if (isJunctionTile(tile)) {
-    const curves = [0, 1, 2].map((i) => curveForChoiceTile(tile, i, transform));
+    const curves = [0, 1, 2].map((i) =>
+      curveForChoiceTile(tile, i, position, rotation),
+    );
     return {
       curves,
       exits: curves.map((c) => c.getPointAt(0)),
     };
   }
   throw new Error('Toilet Bloing!');
+};
+
+export const applyParentTransformation = (
+  position: [number, number, number],
+  rotation: [number, number, number],
+  parentTile: GroupTile,
+  parentTransform: Transform | null,
+) => {
+  const group = new Group();
+  group.position.copy(new Vector3(...parentTile.position));
+  // Group initial rotation is not supported
+  group.updateMatrixWorld();
+  group.updateWorldMatrix(true, true);
+  group.updateMatrix();
+
+  const op = new Vector3(...position);
+  const child = new Group();
+  child.rotation.copy(new Euler(...rotation));
+  child.position.copy(new Vector3(...op));
+  group.add(child);
+
+  // Transform the group
+  // Setting group position does not work yet, only rotation. There is a bug
+  // with the below code where rotating a group with the below line
+  // uncommented does not line up the buddies anymore.
+  // group.position.copy(new Vector3(...(parentTransform?.position || [0, 0, 0])));
+  group.rotation.copy(new Euler(...(parentTransform?.rotation || [0, 0, 0])));
+  group.updateMatrixWorld();
+  group.updateWorldMatrix(true, true);
+  group.updateMatrix();
+
+  const wp = new Vector3();
+  const wq = new Quaternion();
+  child.getWorldPosition(wp);
+  child.getWorldQuaternion(wq);
+  const eu = new Euler();
+  eu.setFromQuaternion(wq);
+  return [wp.toArray(), [eu.x, eu.y, eu.z] as [number, number, number]];
 };

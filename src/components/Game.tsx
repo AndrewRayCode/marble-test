@@ -30,6 +30,7 @@ import {
   useGameStore,
   useKeyPress,
   GateTile,
+  RailTile,
 } from '@/store/gameStore';
 import { toScreen } from '@/util/math';
 import OnScreenArrows from './OnScreenArrows';
@@ -42,6 +43,9 @@ import errorSfx from '@/public/error.mp3';
 import successSfx from '@/public/success.mp3';
 import metalSfx from '@/public/metal-hit-17.mp3';
 import metal2Sfx from '@/public/metal-hit-40.mp3';
+import springboardSfx from '@/public/springboard.mp3';
+import gadget1Sfx from '@/public/gadget-1.mp3';
+import gadget2Sfx from '@/public/gadget-2.mp3';
 
 import cx from 'classnames';
 import Toggle from './Tiles/Toggle';
@@ -55,6 +59,7 @@ import Box from './Tiles/Box';
 import Coin from './Tiles/Coin';
 import Gate, { GATE_DEPTH } from './Tiles/Gate';
 import Sphere from './Tiles/Sphere';
+import Group from './Tiles/Group';
 
 const lowest = (a: {
   left: number;
@@ -93,7 +98,7 @@ const Game = () => {
   const resetLevel = useGameStore((state) => state.resetLevel);
   const setScreenArrows = useGameStore((state) => state.setScreenArrows);
   const setCurveProgress = useGameStore((state) => state.setCurveProgress);
-  const setCurrentTile = useGameStore((state) => state.setCurrentTile);
+  const setCurrentTileId = useGameStore((state) => state.setCurrentTileId);
   const currentCurveIndex = useGameStore((state) => state.currentCurveIndex);
   const levels = useGameStore((state) => state.levels);
   const setCurrentLevelId = useGameStore((state) => state.setCurrentLevelId);
@@ -101,7 +106,7 @@ const Game = () => {
     (state) => state.setCurrentCurveIndex,
   );
   const debug = useGameStore((state) => state.debug);
-  const currentTile = useGameStore((state) => state.currentTile);
+  const currentTileId = useGameStore((state) => state.currentTileId);
   const currentLevelId = useGameStore((state) => state.currentLevelId);
   const setMomentum = useGameStore((state) => state.setMomentum);
   const setEnteredFrom = useGameStore((state) => state.setEnteredFrom);
@@ -114,9 +119,23 @@ const Game = () => {
   const collectedItems = useGameStore((state) => state.collectedItems);
   const bonkBackTo = useGameStore((state) => state.bonkBackTo);
 
+  // const { getCurrentViewport } = useThree((state) => state.viewport);
+
   const marbleRef = useRef<Mesh>(null);
   const orbit = useRef<OrbitControlsImpl>(null);
   const { camera, viewport } = useThree();
+
+  const level = useMemo(() => {
+    if (currentLevelId) {
+      return levels.find((l) => l.id === currentLevelId);
+    }
+  }, [levels, currentLevelId]);
+
+  const currentTile = useMemo(() => {
+    if (currentTileId && level) {
+      return level.tiles.find((t): t is TrackTile => t.id === currentTileId);
+    }
+  }, [currentTileId, level]);
 
   const currentCurve = useMemo(() => {
     if (currentTile) {
@@ -136,12 +155,6 @@ const Game = () => {
     [tilesComputed, currentTile, bonkBackTo],
   );
 
-  const level = useMemo(() => {
-    if (currentLevelId) {
-      return levels.find((l) => l.id === currentLevelId);
-    }
-  }, [levels, currentLevelId]);
-
   useKeyPress('edit', () => setIsEditing(!isEditing));
   useKeyPress('debug', toggleDebug);
   useKeyPress('backslash', () => {
@@ -153,8 +166,24 @@ const Game = () => {
   const [playMoneySfx] = useSound(moneySfx, { volume: 1 });
   const [playErrorSfx] = useSound(errorSfx, { volume: 1 });
   const [playSuccessSfx] = useSound(successSfx, { volume: 1 });
-  const [playMetalHitSfx] = useSound(metalSfx, { volume: 0.1 });
-  const [playMetalHit2Sfx] = useSound(metal2Sfx, { volume: 0.05 });
+  const [playMetalHitSfx] = useSound(metalSfx, { volume: 0.01 });
+  const [playMetalHit2Sfx] = useSound(metal2Sfx, { volume: 0.0 });
+  const [playSpringboardSfx] = useSound(springboardSfx, { volume: 1 });
+  const [playGadget1Sfx] = useSound(gadget1Sfx, { volume: 0.25 });
+  const [playGadget2Sfx] = useSound(gadget2Sfx, { volume: 0.25 });
+
+  const currentTilePosition = useMemo(() => {
+    if (currentTile && level) {
+      const offset = level.tiles.find((t) => t.id === currentTile.parentId)
+        ?.position || [0, 0, 0];
+
+      return new Vector3(
+        currentTile.position[0] + offset[0],
+        currentTile.position[1] + offset[1],
+        currentTile.position[2] + offset[2],
+      );
+    }
+  }, [currentTile, level]);
 
   // Start game :(
   useEffect(() => {
@@ -172,16 +201,46 @@ const Game = () => {
       return;
     }
 
-    const tileScreen = toScreen(
-      new Vector3(...currentTile.position),
-      camera,
-      viewport,
-    );
+    const tileScreen = toScreen(currentTilePosition!, camera, {
+      // r3f viewport size is busted - reports much smaller numbers
+      width: window.innerWidth,
+      height: window.innerHeight,
+    });
+    // let debug = document.getElementById(`debugtile`);
+    // if (!debug) {
+    //   debug = document.createElement('div');
+    //   debug.id = `debugtile`;
+    //   debug.style.position = 'absolute';
+    //   debug.style.width = '10px';
+    //   debug.style.height = '10px';
+    //   debug.style.background = 'black';
+    //   debug.style.zIndex = '1000';
+    //   document.body.appendChild(debug);
+    // }
+    // debug.style.left = `${tileScreen.x}px`;
+    // debug.style.top = `${tileScreen.y}px`;
 
     const entranceDistances = arrowPositions.map((position, entrance) => {
-      const screen = toScreen(position, camera, viewport);
+      // const viewport = getCurrentViewport();
+      const screen = toScreen(position, camera, {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
       // Create vector pointing from marble to entrance
       const v = new Vector2(screen.x - tileScreen.x, screen.y - tileScreen.y);
+      // let debug = document.getElementById(`debug${entrance}`);
+      // if (!debug) {
+      //   debug = document.createElement('div');
+      //   debug.id = `debug${entrance}`;
+      //   debug.style.position = 'absolute';
+      //   debug.style.width = '7px';
+      //   debug.style.height = '7px';
+      //   debug.style.background = ['red', 'green', 'blue'][entrance];
+      //   debug.style.zIndex = '1000';
+      //   document.body.appendChild(debug);
+      // }
+      // debug.style.left = `${screen.x}px`;
+      // debug.style.top = `${screen.y}px`;
       return {
         entrance,
         position,
@@ -193,14 +252,13 @@ const Game = () => {
     });
 
     const seen = new Set<string>();
-    const arrowsForEntrances = entranceDistances.reduce((acc, d) => {
+    const arrowsForEntrances = entranceDistances.reduce((acc, d, i) => {
       // Figure out which cardinal direction this is most pointing
       const arrow = lowest(d);
       // Only one entrance per cardinal direction!
       if (!seen.has(arrow)) {
         seen.add(arrow);
         return acc.concat({
-          d: 0,
           position: d.position,
           entrance: d.entrance,
           arrow: lowest(d),
@@ -355,6 +413,11 @@ const Game = () => {
               s.setEnabledBooleanSwitchesFor(-1, button.id, false);
 
               actions.forEach((action) => {
+                if (action.type === 'gate') {
+                  playGadget2Sfx();
+                } else if (action.type == 'rotation') {
+                  playGadget1Sfx();
+                }
                 s.applyAction(currentTile, action);
               });
             } else if (!enabled && !isNear) {
@@ -370,10 +433,20 @@ const Game = () => {
 
               if (!on) {
                 actions.forEach((action) => {
+                  if (action.type === 'gate') {
+                    playGadget2Sfx();
+                  } else if (action.type == 'rotation') {
+                    playGadget1Sfx();
+                  }
                   s.applyAction(currentTile, action);
                 });
               } else {
                 actions.forEach((action) => {
+                  if (action.type === 'gate') {
+                    playGadget2Sfx();
+                  } else if (action.type == 'rotation') {
+                    playGadget1Sfx();
+                  }
                   s.clearAction(currentTile, action);
                 });
               }
@@ -387,6 +460,11 @@ const Game = () => {
               s.setEnabledBooleanSwitchesFor(-1, button.id, false);
               s.setBooleanSwitch(button.id, !on);
               actions.forEach((action) => {
+                if (action.type === 'gate') {
+                  playGadget2Sfx();
+                } else if (action.type == 'rotation') {
+                  playGadget1Sfx();
+                }
                 s.applyAction(currentTile, action);
               });
             }
@@ -396,6 +474,11 @@ const Game = () => {
               s.setBooleanSwitch(button.id, !on);
 
               actions.forEach((action) => {
+                if (action.type === 'gate') {
+                  playGadget2Sfx();
+                } else if (action.type == 'rotation') {
+                  playGadget1Sfx();
+                }
                 s.clearAction(currentTile, action);
               });
             }
@@ -482,6 +565,15 @@ const Game = () => {
           } else if (s.enteredFrom === -1) {
             nextId = currentTile.connections[s.nextConnection!];
             nextEntrance = currentTile.entrances[s.nextConnection!];
+
+            if (!nextId || nextEntrance === undefined) {
+              playSpringboardSfx();
+              setMomentum(s.playerMomentum > 0 ? -PLAYER_SPEED : PLAYER_SPEED);
+              setEnteredFrom(s.nextConnection!);
+              setNextConnection(-1);
+              // Another an option
+              // s.resetLevel();
+            }
           }
         } else {
           // We're on a straightaway
@@ -490,13 +582,19 @@ const Game = () => {
           nextIdx = isPositive ? 1 : 0;
           nextId = currentTile.connections[nextIdx];
           nextEntrance = currentTile.entrances[nextIdx];
+
+          if (!nextId || nextEntrance === undefined) {
+            playSpringboardSfx();
+            setMomentum(s.playerMomentum > 0 ? -PLAYER_SPEED : PLAYER_SPEED);
+            setEnteredFrom(s.nextConnection!);
+            setNextConnection(s.nextConnection === 0 ? 1 : 0);
+          }
         }
 
         // If we detected there is somewhere to go...
         if (nextId !== undefined || nextEntrance !== undefined) {
           if (nextId === null || nextEntrance == null) {
-            console.log('no next!');
-            // fall out of level!
+            throw new Error('wtf?');
             return;
           } else {
             nextTile = level.tiles.find(
@@ -509,7 +607,7 @@ const Game = () => {
             throw new Error('bad next tile');
           }
 
-          setCurrentTile(nextTile);
+          setCurrentTileId(nextTile.id);
 
           // If connecting to a striaght tile
           if (isRailTile(nextTile)) {
@@ -549,8 +647,8 @@ const Game = () => {
   return (
     <group>
       <color attach="background" args={['white']} />
-      <ambientLight intensity={0.5} />
-      <pointLight position={[10, 10, 10]} />
+      {/* <ambientLight intensity={0.5} /> */}
+      <pointLight position={[0, 4, 0]} intensity={2} castShadow />
       <Environment
         files="/envmaps/room.hdr"
         background
@@ -558,7 +656,7 @@ const Game = () => {
       />
 
       {/* Player */}
-      <mesh ref={marbleRef}>
+      <mesh ref={marbleRef} castShadow>
         <sphereGeometry args={[SPHERE_RADIUS, 128, 128]} />
         <meshStandardMaterial
           metalness={0.4}
@@ -606,33 +704,37 @@ const Game = () => {
       <OnScreenArrows />
 
       {level &&
-        level.tiles.map((tile) => {
-          if (tile.type === 'straight') {
-            return <Straightaway key={tile.id} tile={tile} />;
-          } else if (tile.type === 'quarter') {
-            return <QuarterTurn key={tile.id} tile={tile} />;
-          } else if (tile.type === 't') {
-            return <Junction key={tile.id} tile={tile} />;
-          } else if (tile.type === 'button') {
-            return <Toggle key={tile.id} tile={tile} />;
-          } else if (tile.type === 'cap') {
-            return <Cap key={tile.id} tile={tile} />;
-          } else if (tile.type === 'box') {
-            return <Box key={tile.id} tile={tile} />;
-          } else if (tile.type === 'sphere') {
-            return <Sphere key={tile.id} tile={tile} />;
-          } else if (tile.type === 'coin') {
-            return (
-              <Coin
-                key={tile.id}
-                tile={tile}
-                visible={!collectedItems.has(tile.id)}
-              />
-            );
-          } else if (tile.type === 'gate') {
-            return <Gate key={tile.id} tile={tile} />;
-          }
-        })}
+        level.tiles
+          .filter((t) => t.parentId === undefined || t.parentId === null)
+          .map((tile) => {
+            if (tile.type === 'group') {
+              return <Group key={tile.id} tile={tile} />;
+            } else if (tile.type === 'straight') {
+              return <Straightaway key={tile.id} tile={tile} />;
+            } else if (tile.type === 'quarter') {
+              return <QuarterTurn key={tile.id} tile={tile} />;
+            } else if (tile.type === 't') {
+              return <Junction key={tile.id} tile={tile} />;
+            } else if (tile.type === 'button') {
+              return <Toggle key={tile.id} tile={tile} />;
+            } else if (tile.type === 'cap') {
+              return <Cap key={tile.id} tile={tile} />;
+            } else if (tile.type === 'box') {
+              return <Box key={tile.id} tile={tile} />;
+            } else if (tile.type === 'sphere') {
+              return <Sphere key={tile.id} tile={tile} />;
+            } else if (tile.type === 'coin') {
+              return (
+                <Coin
+                  key={tile.id}
+                  tile={tile}
+                  visible={!collectedItems.has(tile.id)}
+                />
+              );
+            } else if (tile.type === 'gate') {
+              return <Gate key={tile.id} tile={tile} />;
+            }
+          })}
 
       {isEditing && (
         <EditorComponent
@@ -642,31 +744,24 @@ const Game = () => {
 
       {debug &&
         level &&
-        level.tiles.map((tile) => (
-          <group key={tile.id}>
-            {tile.type !== 'box' && tile.type !== 'sphere' && (
-              <Html
-                className={cx('bg-slate-900 idOverlay')}
-                position={tile.position}
-              >
-                {tile.id}
-              </Html>
-            )}
-            {isRailTile(tile) ? (
-              <mesh>
-                <tubeGeometry
-                  args={[
-                    tilesComputed[tile.id]?.curves?.[0],
-                    70,
-                    0.01,
-                    50,
-                    false,
+        level.tiles.map((tile) => {
+          const offset = level.tiles.find((t) => t.id === tile.parentId)
+            ?.position || [0, 0, 0];
+          return (
+            <group key={tile.id}>
+              {tile.type !== 'box' && tile.type !== 'sphere' && (
+                <Html
+                  className={cx('bg-slate-900 idOverlay')}
+                  position={[
+                    tile.position[0] + offset[0],
+                    tile.position[1] + offset[1],
+                    tile.position[2] + offset[2],
                   ]}
-                />
-                <meshStandardMaterial color="blue" wireframe />
-              </mesh>
-            ) : (
-              <group>
+                >
+                  {tile.id}
+                </Html>
+              )}
+              {isRailTile(tile) ? (
                 <mesh>
                   <tubeGeometry
                     args={[
@@ -679,34 +774,49 @@ const Game = () => {
                   />
                   <meshStandardMaterial color="blue" wireframe />
                 </mesh>
-                <mesh>
-                  <tubeGeometry
-                    args={[
-                      tilesComputed[tile.id]?.curves?.[1],
-                      70,
-                      0.01,
-                      50,
-                      false,
-                    ]}
-                  />
-                  <meshStandardMaterial color="blue" wireframe />
-                </mesh>
-                <mesh>
-                  <tubeGeometry
-                    args={[
-                      tilesComputed[tile.id]?.curves?.[2],
-                      70,
-                      0.01,
-                      50,
-                      false,
-                    ]}
-                  />
-                  <meshStandardMaterial color="blue" wireframe />
-                </mesh>
-              </group>
-            )}
-          </group>
-        ))}
+              ) : (
+                <group>
+                  <mesh>
+                    <tubeGeometry
+                      args={[
+                        tilesComputed[tile.id]?.curves?.[0],
+                        70,
+                        0.01,
+                        50,
+                        false,
+                      ]}
+                    />
+                    <meshStandardMaterial color="blue" wireframe />
+                  </mesh>
+                  <mesh>
+                    <tubeGeometry
+                      args={[
+                        tilesComputed[tile.id]?.curves?.[1],
+                        70,
+                        0.01,
+                        50,
+                        false,
+                      ]}
+                    />
+                    <meshStandardMaterial color="blue" wireframe />
+                  </mesh>
+                  <mesh>
+                    <tubeGeometry
+                      args={[
+                        tilesComputed[tile.id]?.curves?.[2],
+                        70,
+                        0.01,
+                        50,
+                        false,
+                      ]}
+                    />
+                    <meshStandardMaterial color="blue" wireframe />
+                  </mesh>
+                </group>
+              )}
+            </group>
+          );
+        })}
 
       {debug && currentTile && (
         <mesh position={currentTile.position}>
@@ -792,6 +902,7 @@ export default function ThreeScene({ dbLevels }: GameProps) {
       >
         <EditorUI enabled={isEditing}>
           <Canvas
+            shadows
             // orthographic
             // camera={{ zoom: 50, position: [0, 0, 100] }}
             camera={{ position: [0, 0, 5] }}

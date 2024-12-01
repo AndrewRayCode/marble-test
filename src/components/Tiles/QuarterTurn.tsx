@@ -72,28 +72,40 @@ const QuarterTurn = ({
       )}
       {/* front right */}
       {['all', 'right', 'front'].includes(showSides) ? (
-        <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
+        <mesh
+          castShadow
+          position={[pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}
+        >
           <tubeGeometry args={[c2, 70, RAIL_RADIUS, 50, false]} />
           <primitive object={railMat} />
         </mesh>
       ) : null}
       {/* front left */}
       {['all', 'front', 'left'].includes(showSides) ? (
-        <mesh position={[-pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}>
+        <mesh
+          castShadow
+          position={[-pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}
+        >
           <tubeGeometry args={[c1, 70, RAIL_RADIUS, 50, false]} />
           <primitive object={railMat} />
         </mesh>
       ) : null}
       {/* back right */}
       {['all', 'right', 'back'].includes(showSides) ? (
-        <mesh position={[pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}>
+        <mesh
+          castShadow
+          position={[pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}
+        >
           <tubeGeometry args={[c2, 70, RAIL_RADIUS, 50, false]} />
           <primitive object={railMat} />
         </mesh>
       ) : null}
       {/* back left */}
       {['all', 'left', 'back'].includes(showSides) ? (
-        <mesh position={[-pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}>
+        <mesh
+          castShadow
+          position={[-pointAt45.x, -TILE_HALF_WIDTH, -pointAt45.y]}
+        >
           <tubeGeometry args={[c1, 70, RAIL_RADIUS, 50, false]} />
           <primitive object={railMat} />
         </mesh>
