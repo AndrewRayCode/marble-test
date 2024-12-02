@@ -225,13 +225,16 @@ export const tStraights = [
   ),
 ];
 
-// Generate the computed / runtime data for this tile
+/**
+ * Generate the runtime information for this tile *in world space*
+ */
 export const computeTrackTile = (
   tile: TrackTile,
   transform: Transform | null,
   parentTile: GroupTile | null,
   parentTransform: Transform | null,
 ): TileComputed => {
+  // Child position in parent space
   let position = transform?.position || tile.position;
   let rotation = transform?.rotation || tile.rotation;
 
@@ -244,15 +247,22 @@ export const computeTrackTile = (
     );
   }
 
+  const pv = new Vector3(...position);
+  const er = new Euler(...rotation);
+
   if (tile.type === 'cap') {
     const curve = curveForRailTile(tile, position, rotation);
     return {
+      position: pv,
+      rotation: er,
       curves: [curve],
       exits: [curve.getPointAt(0)],
     };
   } else if (isRailTile(tile)) {
     const curve = curveForRailTile(tile, position, rotation);
     return {
+      position: pv,
+      rotation: er,
       curves: [curve],
       exits: [curve.getPointAt(0), curve.getPointAt(1)],
     };
@@ -261,6 +271,8 @@ export const computeTrackTile = (
       curveForChoiceTile(tile, i, position, rotation),
     );
     return {
+      position: pv,
+      rotation: er,
       curves,
       exits: curves.map((c) => c.getPointAt(0)),
     };
@@ -268,35 +280,48 @@ export const computeTrackTile = (
   throw new Error('Toilet Bloing!');
 };
 
+/**
+ * Given a position and a rotation, if this object is parented to another tile,
+ * aka in parent space, produce the world space position and rotation
+ */
 export const applyParentTransformation = (
   position: [number, number, number],
   rotation: [number, number, number],
   parentTile: GroupTile,
   parentTransform: Transform | null,
 ) => {
+  // Create the group either at its transformed location, or its starting
+  // location
   const group = new Group();
-  group.position.copy(new Vector3(...parentTile.position));
+  group.position.copy(
+    new Vector3(...(parentTransform?.position || parentTile.position)),
+  );
   // Group initial rotation is not supported
   group.updateMatrixWorld();
   group.updateWorldMatrix(true, true);
   group.updateMatrix();
 
-  const op = new Vector3(...position);
+  // Add the child, first move it back to world space so when it's parented, it's
+  // back in parent space
   const child = new Group();
   child.rotation.copy(new Euler(...rotation));
-  child.position.copy(new Vector3(...op));
+  child.position.copy(new Vector3(...position));
+  // Ah, this appears to keep the world position of the child! So no need to
+  // re-add the parentTile position!
   group.add(child);
 
-  // Transform the group
-  // Setting group position does not work yet, only rotation. There is a bug
-  // with the below code where rotating a group with the below line
-  // uncommented does not line up the buddies anymore.
-  // group.position.copy(new Vector3(...(parentTransform?.position || [0, 0, 0])));
+  // Transform the group... I have no idea why this isn't needed! WTF!
+  // if (parentTransform?.position) {
+  //   group.position.copy(new Vector3(...parentTransform.position));
+  // }
+
+  // Then(?) rotate the group now that it has children
   group.rotation.copy(new Euler(...(parentTransform?.rotation || [0, 0, 0])));
   group.updateMatrixWorld();
   group.updateWorldMatrix(true, true);
   group.updateMatrix();
 
+  // Extract the world coordinates
   const wp = new Vector3();
   const wq = new Quaternion();
   child.getWorldPosition(wp);

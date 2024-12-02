@@ -1,5 +1,7 @@
+import { useGameStore } from '@/store/gameStore';
+import { useKeyboardControls } from '@react-three/drei';
 import { useThree } from '@react-three/fiber';
-import { useCallback, useLayoutEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { Group as ThreeGroup, PerspectiveCamera, CubeTexture } from 'three';
 
 export const useRefMap = <T>() => {
@@ -66,4 +68,20 @@ export const useBackgroundRender = () => {
   }, [camera, gl, scene]);
 
   return [gameObjectsRef, renderBackground] as const;
+};
+
+export const useKeyPress = (key: string, action: () => void) => {
+  const [sub] = useKeyboardControls();
+  const isInputFocused = useGameStore((s) => s.isInputFocused);
+
+  useEffect(() => {
+    return sub(
+      (state) => state[key],
+      (pressed) => {
+        if (pressed && !isInputFocused) {
+          action();
+        }
+      },
+    );
+  }, [sub, action, key, isInputFocused]);
 };

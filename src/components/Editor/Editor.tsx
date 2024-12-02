@@ -16,7 +16,6 @@ import {
   ButtonTile,
   TileBase,
   useGameStore,
-  useKeyPress,
   CapTile,
   BoxTile,
   CoinTile,
@@ -25,7 +24,7 @@ import {
   GroupTile,
 } from '@/store/gameStore';
 
-import { useRefMap } from '@/util/react';
+import { useKeyPress, useRefMap } from '@/util/react';
 import { DoubleSide, Euler, Group as ThreeGroup, Vector3 } from 'three';
 
 import { TILE_HALF_WIDTH } from '@/game/constants';
@@ -173,6 +172,8 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
   const setShowCursor = useGameStore((state) => state.setShowCursor);
   const createType = useGameStore((state) => state.createType);
   const autoSnap = useGameStore((state) => state.autoSnap);
+  const tilesComputed = useGameStore((state) => state.tilesComputed);
+
   const [tileRefs, setTileRefs] = useRefMap<ThreeGroup>();
 
   const level = useMemo(() => {
@@ -233,29 +234,35 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
 
   useKeyPress('g', () => {
     setGridPosition((prev) => {
-      if (selectedTile) {
+      if (selectedTile && level) {
+        const parent =
+          selectedTile.parentId !== null
+            ? level.tiles.find((t) => t.id === selectedTile.parentId)
+            : null;
+        const position = tilesComputed[
+          selectedTile.id
+        ]?.position?.toArray() || [
+          // Boxes don't have computed positions! So re-add the parent
+          // offset
+          selectedTile.position[0] + (parent ? parent.position[0] : 0),
+          selectedTile.position[1] + (parent ? parent.position[1] : 0),
+          selectedTile.position[2] + (parent ? parent.position[2] : 0),
+        ];
+
         if (gridRotation === 1) {
           return [
             // Rotate around y, go left
-            selectedTile.position[0] - 0.5,
+            position[0] - 0.5,
             // Move grid so squares line up with where tiles place
-            selectedTile.position[1] - 0.5,
-            selectedTile.position[2] - 0.5,
+            position[1] - 0.5,
+            position[2] - 0.5,
           ];
           // No rotation, go down
         } else if (gridRotation === 2) {
-          return [
-            selectedTile.position[0] - 0.5,
-            selectedTile.position[1] - 0.5,
-            selectedTile.position[2] - 0.5,
-          ];
+          return [position[0] - 0.5, position[1] - 0.5, position[2] - 0.5];
         }
         // Rotating around x axis, go back
-        return [
-          selectedTile.position[0] - 0.5,
-          selectedTile.position[1] - 0.5,
-          selectedTile.position[2] - 0.5,
-        ];
+        return [position[0] - 0.5, position[1] - 0.5, position[2] - 0.5];
       }
       return prev;
     });
@@ -482,7 +489,6 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
                       ? {
                           rotation: [
                             target.rotation.x,
-
                             target.rotation.y,
                             target.rotation.z,
                           ],
@@ -519,11 +525,15 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
                 always visible, it stores the transform position and rotation.
                 Something better would be to read the rotation ref from the
                 tile itself. */
-              position={[
-                tile.position[0] + (parent ? parent.position[0] : 0),
-                tile.position[1] + (parent ? parent.position[1] : 0),
-                tile.position[2] + (parent ? parent.position[2] : 0),
-              ]}
+              position={
+                tilesComputed[tile.id]?.position || [
+                  // Boxes don't have computed positions! So re-add the parent
+                  // offset
+                  tile.position[0] + (parent ? parent.position[0] : 0),
+                  tile.position[1] + (parent ? parent.position[1] : 0),
+                  tile.position[2] + (parent ? parent.position[2] : 0),
+                ]
+              }
               rotation={tile.rotation}
               scale={tile.scale}
               ref={setTileRefs(tile.id)}

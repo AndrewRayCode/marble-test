@@ -1,15 +1,9 @@
 'use client';
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import useSound from 'use-sound';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
-import {
-  Mesh,
-  PerspectiveCamera,
-  Vector2,
-  Vector3,
-  Group as ThreeGroup,
-} from 'three';
+import { Mesh, Vector2, Vector3 } from 'three';
 import { clamp } from 'three/src/math/MathUtils.js';
 import { Canvas, useThree } from '@react-three/fiber';
 import {
@@ -34,9 +28,8 @@ import {
   ButtonTile,
   TrackTile,
   useGameStore,
-  useKeyPress,
   GateTile,
-  RailTile,
+  isJunctionTile,
 } from '@/store/gameStore';
 import { toScreen } from '@/util/math';
 import OnScreenArrows from './OnScreenArrows';
@@ -52,6 +45,10 @@ import metal2Sfx from '@/public/metal-hit-40.mp3';
 import springboardSfx from '@/public/springboard.mp3';
 import gadget1Sfx from '@/public/gadget-1.mp3';
 import gadget2Sfx from '@/public/gadget-2.mp3';
+import doorOpen from '@/public/door-open.mp3';
+import cinderblock from '@/public/cinderblockmove.mp3';
+import sliding from '@/public/sliding.mp3';
+import arcadeWin from '@/public/arcade-win.mp3';
 
 import cx from 'classnames';
 import Toggle from './Tiles/Toggle';
@@ -66,7 +63,9 @@ import Coin from './Tiles/Coin';
 import Gate, { GATE_DEPTH } from './Tiles/Gate';
 import Sphere from './Tiles/Sphere';
 import Group from './Tiles/Group';
-import { useBackgroundRender } from '@/util/react';
+import { useBackgroundRender, useKeyPress } from '@/util/react';
+
+import styles from './game.module.css';
 
 const lowest = (a: {
   left: number;
@@ -125,6 +124,8 @@ const Game = () => {
   const tilesComputed = useGameStore((state) => state.tilesComputed);
   const collectedItems = useGameStore((state) => state.collectedItems);
   const bonkBackTo = useGameStore((state) => state.bonkBackTo);
+  const setVictory = useGameStore((state) => state.setVictory);
+  const victory = useGameStore((state) => state.victory);
 
   const [gameObjectsRef, renderBackground] = useBackgroundRender();
 
@@ -154,13 +155,18 @@ const Game = () => {
 
   const arrowPositions = useMemo(
     () =>
-      currentTile?.type === 't'
-        ? tilesComputed[currentTile.id].exits
-        : currentTile?.type === 'cap'
-          ? [tilesComputed[currentTile.id]?.curves[0].getPointAt(0)]
-          : bonkBackTo
-            ? [new Vector3(...bonkBackTo.lastExit)]
-            : [],
+      !currentTile
+        ? []
+        : currentTile?.type === 't'
+          ? tilesComputed[currentTile.id].exits
+          : currentTile?.type === 'cap'
+            ? [tilesComputed[currentTile.id]?.curves[0].getPointAt(0)]
+            : bonkBackTo
+              ? [new Vector3(...bonkBackTo.lastExit)]
+              : [
+                  tilesComputed[currentTile.id]?.curves[0].getPointAt(0),
+                  tilesComputed[currentTile.id]?.curves[0].getPointAt(1),
+                ],
     [tilesComputed, currentTile, bonkBackTo],
   );
 
@@ -180,19 +186,27 @@ const Game = () => {
   const [playSpringboardSfx] = useSound(springboardSfx, { volume: 1 });
   const [playGadget1Sfx] = useSound(gadget1Sfx, { volume: 0.25 });
   const [playGadget2Sfx] = useSound(gadget2Sfx, { volume: 0.25 });
+  const [playDoorOpenSfx] = useSound(doorOpen, {
+    volume: 0.25,
+    playbackRate: 1.75,
+  });
+  const [playCinderblockSfx] = useSound(cinderblock, {
+    volume: 0.1,
+    playbackRate: 1.75,
+  });
+  const [playSlidingSfx] = useSound(sliding, {
+    volume: 0.5,
+    playbackRate: 1.75,
+  });
+  const [playArcadeWinSfx] = useSound(arcadeWin, {
+    volume: 0.9,
+  });
 
   const currentTilePosition = useMemo(() => {
-    if (currentTile && level) {
-      const offset = level.tiles.find((t) => t.id === currentTile.parentId)
-        ?.position || [0, 0, 0];
-
-      return new Vector3(
-        currentTile.position[0] + offset[0],
-        currentTile.position[1] + offset[1],
-        currentTile.position[2] + offset[2],
-      );
+    if (currentTileId) {
+      return tilesComputed[currentTileId]?.position;
     }
-  }, [currentTile, level]);
+  }, [currentTileId, tilesComputed]);
 
   // Start game :(
   useEffect(() => {
@@ -311,14 +325,6 @@ const Game = () => {
     setCurveProgress(progress);
 
     if (marbleRef.current && currentCurve && currentTile) {
-      // if (s.playerMomentum === 0) {
-      //   if (key().up) {
-      //     setMomentum(PLAYER_SPEED);
-      //   } else if (key().down) {
-      //     setMomentum(-PLAYER_SPEED);
-      //   }
-      // }
-
       // Get the point along the curve
       let point = currentCurve.getPointAt(progress);
 
@@ -338,8 +344,8 @@ const Game = () => {
           }
         });
 
+      // Check for gate collision
       const gateCollisionDistance = SPHERE_RADIUS + GATE_DEPTH / 2;
-      // Check for switch presses
       level.tiles
         .filter((t): t is GateTile => {
           if (
@@ -428,6 +434,8 @@ const Game = () => {
                   playGadget2Sfx();
                 } else if (action.type == 'rotation') {
                   playGadget1Sfx();
+                } else if (action.type === 'translation') {
+                  playSlidingSfx();
                 }
                 s.applyAction(currentTile, action);
               });
@@ -457,6 +465,8 @@ const Game = () => {
                     playGadget2Sfx();
                   } else if (action.type == 'rotation') {
                     playGadget1Sfx();
+                  } else if (action.type === 'translation') {
+                    playSlidingSfx();
                   }
                   s.clearAction(currentTile, action);
                 });
@@ -475,6 +485,8 @@ const Game = () => {
                   playGadget2Sfx();
                 } else if (action.type == 'rotation') {
                   playGadget1Sfx();
+                } else if (action.type === 'translation') {
+                  playSlidingSfx();
                 }
                 s.applyAction(currentTile, action);
               });
@@ -489,6 +501,8 @@ const Game = () => {
                   playGadget2Sfx();
                 } else if (action.type == 'rotation') {
                   playGadget1Sfx();
+                } else if (action.type === 'translation') {
+                  playSlidingSfx();
                 }
                 s.clearAction(currentTile, action);
               });
@@ -496,15 +510,26 @@ const Game = () => {
           }
         });
 
-      const isDown = key().down && directions.down;
-      const isLeft = key().left && directions.left;
-      const isRight = key().right && directions.right;
-      const isUp = key().up && directions.up;
+      const isDown = key().down && directions.down && !s.victory;
+      const isLeft = key().left && directions.left && !s.victory;
+      const isRight = key().right && directions.right && !s.victory;
+      const isUp = key().up && directions.up && !s.victory;
       const isValidUserChoosenDirection = isDown || isLeft || isRight || isUp;
 
       if (s.bonkBackTo && isValidUserChoosenDirection) {
         setMomentum(s.bonkBackTo.nextDirection * PLAYER_SPEED);
         s.clearBonkBackTo();
+      }
+
+      // If we're on a tile and stopped - like if the game starts on a straight
+      // away, let the user move out of it. Buuuut how do we choose the movement
+      // direction?
+      if (
+        !s.bonkBackTo &&
+        s.playerMomentum === 0 &&
+        isValidUserChoosenDirection
+      ) {
+        setMomentum(isUp || isLeft ? PLAYER_SPEED : -PLAYER_SPEED);
       }
 
       let nextTile: TrackTile | undefined;
@@ -645,12 +670,12 @@ const Game = () => {
       const coins = level.tiles.filter((t) => t.type === 'coin');
       if (
         coins.length &&
-        coins.filter((t) => !s.collectedItems.has(t.id)).length === 0
+        coins.filter((t) => !s.collectedItems.has(t.id)).length === 0 &&
+        !s.victory
       ) {
-        playSuccessSfx();
-        const idx = levels.findIndex((l) => l.id === currentLevelId);
-        const nextIndex = (idx + 1) % levels.length;
-        setCurrentLevelId(levels[nextIndex].id!);
+        // playSuccessSfx();
+        playArcadeWinSfx();
+        setVictory(true);
       }
     }
   });
@@ -658,8 +683,8 @@ const Game = () => {
   return (
     <>
       <color attach="background" args={['white']} />
-      {/* <ambientLight intensity={0.5} /> */}
-      <pointLight position={[0, 4, 0]} intensity={2} castShadow />
+      <ambientLight intensity={0.1} />
+      <pointLight position={[0, 4, 0]} intensity={3} castShadow />
       <Environment
         files="/envmaps/room.hdr"
         background
@@ -754,25 +779,21 @@ const Game = () => {
 
         {isEditing && (
           <EditorComponent
-            setOrbitEnabled={(e) => (orbit.current!.enabled = e)}
+            setOrbitEnabled={(e) =>
+              orbit.current && (orbit.current.enabled = e)
+            }
           />
         )}
 
         {debug &&
           level &&
           level.tiles.map((tile) => {
-            const offset = level.tiles.find((t) => t.id === tile.parentId)
-              ?.position || [0, 0, 0];
             return (
               <group key={tile.id}>
                 {tile.type !== 'box' && tile.type !== 'sphere' && (
                   <Html
                     className={cx('bg-slate-900 idOverlay')}
-                    position={[
-                      tile.position[0] + offset[0],
-                      tile.position[1] + offset[1],
-                      tile.position[2] + offset[2],
-                    ]}
+                    position={tilesComputed[tile.id]?.position}
                   >
                     {tile.id}
                   </Html>
@@ -788,9 +809,9 @@ const Game = () => {
                         false,
                       ]}
                     />
-                    <meshStandardMaterial color="blue" wireframe />
+                    <meshStandardMaterial color="red" wireframe />
                   </mesh>
-                ) : (
+                ) : isJunctionTile(tile) ? (
                   <group>
                     <mesh>
                       <tubeGeometry
@@ -802,7 +823,7 @@ const Game = () => {
                           false,
                         ]}
                       />
-                      <meshStandardMaterial color="blue" wireframe />
+                      <meshStandardMaterial color="red" wireframe />
                     </mesh>
                     <mesh>
                       <tubeGeometry
@@ -814,7 +835,7 @@ const Game = () => {
                           false,
                         ]}
                       />
-                      <meshStandardMaterial color="blue" wireframe />
+                      <meshStandardMaterial color="red" wireframe />
                     </mesh>
                     <mesh>
                       <tubeGeometry
@@ -826,16 +847,16 @@ const Game = () => {
                           false,
                         ]}
                       />
-                      <meshStandardMaterial color="blue" wireframe />
+                      <meshStandardMaterial color="red" wireframe />
                     </mesh>
                   </group>
-                )}
+                ) : null}
               </group>
             );
           })}
 
-        {debug && currentTile && (
-          <mesh position={currentTile.position}>
+        {debug && currentTilePosition && (
+          <mesh position={currentTilePosition}>
             <boxGeometry args={[1, 1, 1]} />
             <meshStandardMaterial color="red" opacity={0.5} transparent />
           </mesh>
@@ -856,6 +877,10 @@ export default function ThreeScene({ dbLevels }: GameProps) {
   const setaCurrentLevelId = useGameStore((state) => state.setCurrentLevelId);
   const setLevelsFromDb = useGameStore((state) => state.setLevelsFromDb);
   const setInputFocused = useGameStore((state) => state.setIsInputFocused);
+  const victory = useGameStore((state) => state.victory);
+  const setVictory = useGameStore((state) => state.setVictory);
+  const setCurrentLevelId = useGameStore((state) => state.setCurrentLevelId);
+  const resetLevel = useGameStore((state) => state.resetLevel);
 
   const [fetched, setHasFetched] = useState(false);
 
@@ -918,6 +943,41 @@ export default function ThreeScene({ dbLevels }: GameProps) {
         ]}
       >
         <EditorUI enabled={isEditing}>
+          {!isEditing && victory && (
+            <div className="absolute inset-0 bg-gray-900 bg-opacity-25 flex items-center justify-center z-20">
+              <div className="bg-slate-900 p-6 rounded-xl drop-shadow-[0_0_25px_5px_rgba(0,0,0,1)] text-center">
+                <h1 className="text-4xl font-bold mb-4">Victory!</h1>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <button
+                      className={styles.button}
+                      onClick={() => {
+                        const idx = levels.findIndex(
+                          (l) => l.id === currentLevelId,
+                        );
+                        const nextIndex = (idx + 1) % levels.length;
+                        setVictory(false);
+                        setCurrentLevelId(levels[nextIndex].id!);
+                      }}
+                    >
+                      Next level
+                    </button>
+                  </div>
+                  <div>
+                    <button
+                      className={styles.button}
+                      onClick={() => {
+                        setVictory(false);
+                        resetLevel();
+                      }}
+                    >
+                      Replay
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           <Canvas
             shadows
             orthographic

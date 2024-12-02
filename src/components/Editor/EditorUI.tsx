@@ -1,11 +1,12 @@
 'use client';
 
-import { useGameStore, useKeyPress } from '@/store/gameStore';
+import { useGameStore } from '@/store/gameStore';
 
 import cx from 'classnames';
 
 import styles from './editor.module.css';
 import TileEditor from './TileEditor';
+import { useKeyPress } from '@/util/react';
 
 export const EditorUI = ({
   children,
