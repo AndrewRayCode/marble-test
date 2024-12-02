@@ -2,9 +2,7 @@ import { computeTrackTile } from '@/util/curves';
 import { calculateExitBuddies, deg2Rad, TileExit } from '@/util/math';
 import { post } from '@/util/network';
 import { Level as DbLevel } from '@prisma/client';
-import { useKeyboardControls } from '@react-three/drei';
-import { useEffect } from 'react';
-import { CubicBezierCurve3, Vector3 } from 'three';
+import { CubicBezierCurve3, Euler, Vector3 } from 'three';
 import { create } from 'zustand';
 
 export type Side = 'left' | 'right' | 'front' | 'back';
@@ -16,6 +14,8 @@ export type Transform = {
 };
 
 export type TileComputed = {
+  position: Vector3;
+  rotation: Euler;
   curves: CubicBezierCurve3[];
   exits: Vector3[];
 };
@@ -27,13 +27,18 @@ export type RotateAction = {
   targetTiles: string[];
   axis: ActionAxis;
 };
+export type TranslateAction = {
+  type: 'translation';
+  offset: [string, string, string];
+  targetTiles: string[];
+};
 export type GateActionType = 'toggle' | 'open' | 'close';
 export type GateAction = {
   type: 'gate';
   targetTiles: string[];
   gateAction: GateActionType;
 };
-export type Action = RotateAction | GateAction;
+export type Action = RotateAction | TranslateAction | GateAction;
 export type ActionType = Action['type'];
 
 export const defaultAction = {
@@ -188,6 +193,7 @@ export interface GameStore {
     actionIdx: number,
     action: Partial<T>,
   ) => void;
+  setTileAction: (tileId: string, actionIdx: number, action: Action) => void;
   updateTileAndRecompute: <T extends Tile>(
     tileId: string,
     tile: Partial<T>,
@@ -267,6 +273,9 @@ export interface GameStore {
   setArrowPositions: (positions: Vector3[]) => void;
   screenArrows: ScreenArrows;
   setScreenArrows: (arrows: ScreenArrows) => void;
+
+  victory: boolean;
+  setVictory: (victory: boolean) => void;
 }
 
 export const useGameStore = create<GameStore>((set, get) => ({
@@ -315,7 +324,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setDebugPoints: (debugPoints) => set({ debugPoints }),
 
   isEditing: true,
-  setIsEditing: (isEditing) => set({ isEditing }),
+  setIsEditing: (isEditing) => set({ isEditing, victory: false }),
   selectedTileId: null,
   setSelectedTileId: (id) => set({ selectedTileId: id }),
   hoverTileId: null,
@@ -365,7 +374,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const tiles = level.tiles.map((tile) => {
       if (tile.id === tileId) {
         // add the child to the parent, but to keep the child's world position,
-        // subtract the group's position
+        // subtract the group's position. A tile's position is in parent space!
         return {
           ...tile,
           parentId,
@@ -410,6 +419,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
       actions: t.actions.map((a, i) =>
         i === actionIdx ? { ...a, ...action } : a,
       ),
+    };
+    const tiles = level.tiles.map((tile) =>
+      tileId === tile.id ? updated : tile,
+    );
+    s.updateCurrentLevel({ tiles });
+  },
+  setTileAction: (tileId, actionIdx, action) => {
+    const s = get();
+    const level = s.levels.find((l) => l.id === s.currentLevelId)!;
+    const t = level.tiles.find((tile) => tile.id === tileId) as ButtonTile;
+    const updated: ButtonTile = {
+      ...t,
+      actions: t.actions.map((a, i) => (i === actionIdx ? action : a)),
     };
     const tiles = level.tiles.map((tile) =>
       tileId === tile.id ? updated : tile,
@@ -565,22 +587,43 @@ export const useGameStore = create<GameStore>((set, get) => ({
   applyAction: (tile, action) => {
     const s = get();
     const level = s.levels.find((l) => l.id === s.currentLevelId)!;
-    if (action.type === 'rotation') {
+    if (action.type === 'rotation' || action.type === 'translation') {
       action.targetTiles.forEach((targetId) => {
-        const target = level.tiles.find((t) => t.id === targetId)!;
-        const start = s.transforms[targetId]?.rotation ||
-          target?.rotation || [0, 0, 0];
-        const { axis, degrees } = action;
-        const rad = deg2Rad(degrees);
-        const rotation = [
-          start[0] + (axis === 'x' ? rad : 0),
-          start[1] + (axis === 'y' ? rad : 0),
-          start[2] + (axis === 'z' ? rad : 0),
-        ] as [number, number, number];
-        const transform = {
-          ...s.transforms[targetId],
-          rotation,
-        };
+        const target = level.tiles.find((t) => t.id === targetId);
+        if (!target) {
+          console.error('Bad target!', { action, targetId });
+          return;
+        }
+        let transform = s.transforms[targetId] || {};
+
+        if (action.type === 'rotation') {
+          const start = s.transforms[targetId]?.rotation ||
+            target?.rotation || [0, 0, 0];
+          const { axis, degrees } = action;
+          const rad = deg2Rad(degrees);
+          const rotation = [
+            start[0] + (axis === 'x' ? rad : 0),
+            start[1] + (axis === 'y' ? rad : 0),
+            start[2] + (axis === 'z' ? rad : 0),
+          ] as [number, number, number];
+          transform = {
+            ...transform,
+            rotation,
+          };
+        } else if (action.type === 'translation') {
+          const start = s.transforms[targetId]?.position ||
+            target?.position || [0, 0, 0];
+          const offset = action.offset;
+          const position = [
+            start[0] + parseFloat(offset[0]),
+            start[1] + parseFloat(offset[1]),
+            start[2] + parseFloat(offset[2]),
+          ] as [number, number, number];
+          transform = {
+            ...transform,
+            position,
+          };
+        }
 
         let updatedComputed = s.tilesComputed;
 
@@ -686,6 +729,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   screenArrows: [],
   setScreenArrows: (screenArrows) => set({ screenArrows }),
 
+  victory: false,
+  setVictory: (victory) => set({ victory }),
+
   collectedItems: new Set(),
   collectItem: (id) =>
     set((state) => {
@@ -712,66 +758,53 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setBonkBackTo: (bonkBackTo) => set({ bonkBackTo }),
   clearBonkBackTo: () => set({ bonkBackTo: null }),
 
-  resetLevel: () =>
-    set((state) => {
-      if (!state.currentLevelId) {
-        return {};
-      }
+  resetLevel: () => {
+    const s = get();
+    if (!s.currentLevelId) {
+      return {};
+    }
 
-      const level = state.levels.find((l) => l.id === state.currentLevelId)!;
-      const tilesComputed = level.tiles.reduce<Record<string, TileComputed>>(
-        (acc, tile) => {
-          const parentTile =
-            level.tiles.find((t): t is GroupTile => t.id === tile.parentId) ||
-            null;
-          return isRailTile(tile) || isJunctionTile(tile)
-            ? {
-                ...acc,
-                [tile.id]: computeTrackTile(tile, null, parentTile, null),
-              }
-            : acc;
-        },
-        {},
-      );
-
-      const currentTile = level.tiles.find(
-        (t) => t.id === level.startingTileId,
-      ) as TrackTile;
-      console.log('Game reset! Starting on', { currentTile });
-      return {
-        curveProgress:
-          currentTile.type === 'cap' || currentTile.type === 't' ? 1 : 0,
-        currentCurveIndex: 0,
-        enteredFrom: currentTile.type === 't' ? -1 : 0,
-        // TODO: Need a starting connection too!
-        nextConnection: -1,
-        playerMomentum: 0,
-        transforms: {},
-        debugPoints: [],
-        bonkBackTo: null,
-        collectedItems: new Set(),
-        gateStates: {},
-        tilesComputed,
-        currentTileId: currentTile.id,
-      } satisfies Partial<GameStore>;
-    }),
-}));
-
-export const useKeyPress = (key: string, action: () => void) => {
-  const [sub] = useKeyboardControls();
-  const isInputFocused = useGameStore((s) => s.isInputFocused);
-
-  useEffect(() => {
-    return sub(
-      (state) => state[key],
-      (pressed) => {
-        if (pressed && !isInputFocused) {
-          action();
-        }
+    const level = s.levels.find((l) => l.id === s.currentLevelId)!;
+    const tilesComputed = level.tiles.reduce<Record<string, TileComputed>>(
+      (acc, tile) => {
+        const parentTile =
+          level.tiles.find((t): t is GroupTile => t.id === tile.parentId) ||
+          null;
+        return isRailTile(tile) || isJunctionTile(tile)
+          ? {
+              ...acc,
+              [tile.id]: computeTrackTile(tile, null, parentTile, null),
+            }
+          : acc;
       },
+      {},
     );
-  }, [sub, action, key, isInputFocused]);
-};
+
+    const currentTile = level.tiles.find(
+      (t) => t.id === level.startingTileId,
+    ) as TrackTile | undefined;
+    console.log('Game reset! Starting on', { currentTile });
+
+    set({
+      curveProgress:
+        currentTile?.type === 'cap' || currentTile?.type === 't' ? 1 : 0.5,
+      currentCurveIndex: 0,
+      enteredFrom: currentTile?.type === 't' ? -1 : 0,
+      // TODO: Need a starting connection too!
+      nextConnection: -1,
+      playerMomentum: 0,
+      transforms: {},
+      debugPoints: [],
+      bonkBackTo: null,
+      collectedItems: new Set(),
+      gateStates: {},
+      tilesComputed,
+      currentTileId: currentTile?.id,
+      victory: false,
+    });
+    s.autoSnap(tilesComputed);
+  },
+}));
 
 export const serializeLevel = (level: Level) => {
   return {

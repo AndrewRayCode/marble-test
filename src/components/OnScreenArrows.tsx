@@ -42,13 +42,18 @@ const OnScreenArrows = () => {
   // to show
   const arrowPositions = useMemo(
     () =>
-      currentTile?.type === 't'
-        ? tilesComputed[currentTile.id].exits
-        : currentTile?.type === 'cap'
-          ? [tilesComputed[currentTile.id]?.curves[0].getPointAt(0)]
-          : bonkBackTo
-            ? [new Vector3(...bonkBackTo.lastExit)]
-            : [],
+      !currentTile
+        ? []
+        : currentTile?.type === 't'
+          ? tilesComputed[currentTile.id].exits
+          : currentTile?.type === 'cap'
+            ? [tilesComputed[currentTile.id]?.curves[0].getPointAt(0)]
+            : bonkBackTo
+              ? [new Vector3(...bonkBackTo.lastExit)]
+              : [
+                  tilesComputed[currentTile.id]?.curves[0].getPointAt(0),
+                  tilesComputed[currentTile.id]?.curves[0].getPointAt(1),
+                ],
     [tilesComputed, currentTile, bonkBackTo],
   );
 
@@ -69,20 +74,19 @@ const OnScreenArrows = () => {
           if (!htmlRef) {
             return;
           }
-          // If we calculated this arrow shouldn't be shown, hide it
-          if (!screenData) {
-            htmlRef.style.display = 'none';
-            // Otherwise dynamically set its screen position and contents
-          } else {
+          if (screenData && state.playerMomentum === 0 && !state.victory) {
             htmlRef.style.display = 'block';
             arrowRef?.position?.copy(screenData.position);
             if (htmlRef) {
               htmlRef.textContent = arrowLookup[screenData.arrow];
             }
+            // If we calculated this arrow shouldn't be shown, hide it
+          } else {
+            htmlRef.style.display = 'none';
           }
         });
       }),
-    [arrowRefs, htmlRefs, arrowPositions],
+    [arrowRefs, htmlRefs, arrowPositions, currentTile],
   );
 
   // Not all of these arrows will get shown, they are dynamically hidden/shown

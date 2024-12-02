@@ -6,6 +6,7 @@ import { railMaterial } from '@/game/materials';
 import { toWorld } from '@/util/math';
 import { useRefMap } from '@/util/react';
 import { pointAt45, straightCurve, tStraights, useCurve } from '@/util/curves';
+import { a, useSpring } from '@react-spring/three';
 
 const Straightaway = ({
   tile,
@@ -14,10 +15,11 @@ const Straightaway = ({
   tile: RailTile;
   opacity?: number;
 }) => {
-  const { position, rotation, showSides } = tile;
+  const { position: meshPosition, rotation: meshRotation, showSides } = tile;
   const c1 = useCurve(straightCurve);
   const debug = useGameStore((state) => state.debug);
   const setExitPositions = useGameStore((state) => state.setExitPositions);
+  const transform = useGameStore((state) => state.transforms[tile.id]);
   const [exitRefs, setExitRef] = useRefMap<Group>();
   const matOpacity = opacity || 1;
 
@@ -53,8 +55,21 @@ const Straightaway = ({
     [c1],
   );
 
+  const { position, rotation } = useSpring({
+    position: transform?.position || meshPosition,
+    rotation: transform?.rotation || meshRotation,
+    config: {
+      mass: 1,
+      tension: 170,
+      friction: 26,
+    },
+  });
+
   return (
-    <group position={position} rotation={rotation}>
+    <a.group
+      position={position}
+      rotation={rotation as unknown as [number, number, number]}
+    >
       {debug && (
         <mesh castShadow>
           <boxGeometry args={[1, 1, 1]} />
@@ -104,7 +119,7 @@ const Straightaway = ({
           <primitive object={railMat} />
         </mesh>
       ) : null}
-    </group>
+    </a.group>
   );
 };
 

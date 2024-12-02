@@ -5,18 +5,38 @@ import {
   ActionAxis,
   ActionType,
   ButtonActionType,
+  GateAction,
   GateActionType,
   NumTrip,
   RailTile,
+  RotateAction,
   Side,
   StrTrip,
   Tile,
+  TranslateAction,
   useGameStore,
 } from '@/store/gameStore';
 
 import cx from 'classnames';
 
 import styles from './editor.module.css';
+
+const defaultGateAction: GateAction = {
+  type: 'gate',
+  gateAction: 'toggle',
+  targetTiles: [],
+};
+const defaultRotationAction: RotateAction = {
+  type: 'rotation',
+  axis: 'x',
+  degrees: 90,
+  targetTiles: [],
+};
+const defaultTranslateAction: TranslateAction = {
+  type: 'translation',
+  offset: ['0', '0', '0'],
+  targetTiles: [],
+};
 
 const ArrayOfIdsEditor = ({
   ids,
@@ -90,6 +110,7 @@ const ActionEditor = ({
 }) => {
   const action = tile.actions[actionIndex];
   const updateTileAction = useGameStore((state) => state.updateTileAction);
+  const setTileAction = useGameStore((state) => state.setTileAction);
 
   return (
     <div className="border-solid border-2 p-2 mb-3 rounded-lg border-slate-600">
@@ -99,16 +120,80 @@ const ActionEditor = ({
           className={cx(styles.input, 'mb-2 w-full')}
           value={action.type}
           onChange={(e) => {
-            updateTileAction(tile.id, actionIndex, {
-              type: e.target.value as ActionType,
-            });
+            setTileAction(
+              tile.id,
+              actionIndex,
+              e.target.value === 'rotation'
+                ? defaultRotationAction
+                : e.target.value === 'translation'
+                  ? defaultTranslateAction
+                  : defaultGateAction,
+            );
           }}
         >
           <option value="rotation">Rotation</option>
+          <option value="translation">Translation</option>
           <option value="gate">Gate</option>
         </select>
       </div>
-      {action.type === 'rotation' ? (
+      {action.type === 'translation' ? (
+        <div className="mb-1">
+          <label className="text-slate-400">Offset</label>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-slate-400">X</label>
+              <input
+                className={cx(styles.input, 'mb-2 w-full')}
+                value={action.offset[0]}
+                onChange={(e) => {
+                  updateTileAction(tile.id, actionIndex, {
+                    offset: [
+                      e.target.value,
+                      action.offset[1],
+                      action.offset[2],
+                    ],
+                  });
+                }}
+                type="text"
+              />
+            </div>
+            <div>
+              <label className="text-slate-400">Y</label>
+              <input
+                className={cx(styles.input, 'mb-2 w-full')}
+                value={action.offset[1]}
+                onChange={(e) => {
+                  updateTileAction(tile.id, actionIndex, {
+                    offset: [
+                      action.offset[0],
+                      e.target.value,
+                      action.offset[2],
+                    ],
+                  });
+                }}
+                type="text"
+              />
+            </div>
+            <div>
+              <label className="text-slate-400">Z</label>
+              <input
+                className={cx(styles.input, 'mb-2 w-full')}
+                value={action.offset[2]}
+                onChange={(e) => {
+                  updateTileAction(tile.id, actionIndex, {
+                    offset: [
+                      action.offset[0],
+                      action.offset[1],
+                      e.target.value,
+                    ],
+                  });
+                }}
+                type="text"
+              />
+            </div>
+          </div>
+        </div>
+      ) : action.type === 'rotation' ? (
         <div className="mb-1 grid grid-cols-2 gap-2">
           <div>
             <label className="text-slate-400">Axis</label>

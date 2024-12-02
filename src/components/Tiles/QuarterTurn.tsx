@@ -7,7 +7,6 @@ import {
   useCurve,
 } from '@/util/curves';
 import { useSpring, a } from '@react-spring/three';
-import DebugCurveHandles from './DebugCurveHandles';
 import { useMemo } from 'react';
 import { MeshStandardMaterial } from 'three';
 import { railMaterial } from '@/game/materials';
@@ -26,7 +25,6 @@ const QuarterTurn = ({
   const transform = useGameStore((state) => state.transforms[tile.id]);
   const matOpacity = opacity || 1;
 
-  // Configure spring animation for rotation
   const { position, rotation } = useSpring({
     position: transform?.position || meshPosition,
     rotation: transform?.rotation || meshRotation,
@@ -53,12 +51,6 @@ const QuarterTurn = ({
       position={position}
       rotation={rotation as unknown as [number, number, number]}
     >
-      {debug && (
-        <DebugCurveHandles
-          curve={quarterCurve}
-          position={[-pointAt45.x, -TILE_HALF_WIDTH, pointAt45.y]}
-        />
-      )}
       {debug && (
         <mesh>
           <boxGeometry args={[1, 1, 1]} />
