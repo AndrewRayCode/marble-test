@@ -409,7 +409,7 @@ export const TileEditor = ({ selectedTileId }: { selectedTileId: string }) => {
             <label className="text-slate-400">Hit Behavior</label>
             <select
               className={cx(styles.input, 'mb-2 w-full')}
-              value={selectedTile.directionBehavior}
+              value={selectedTile.hitBehavior}
               onChange={(e) => {
                 updateTileAndRecompute(selectedTileId, {
                   hitBehavior: e.target.value as HitBehavior,

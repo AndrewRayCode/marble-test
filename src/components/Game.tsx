@@ -75,6 +75,7 @@ import { useBackgroundRender, useKeyPress } from '@/util/react';
 import styles from './game.module.css';
 import Player from './Tiles/Player';
 import Friend from './Tiles/Friend';
+import next from 'next';
 
 const lowest = (a: {
   left: number;
@@ -128,6 +129,50 @@ const findCollisions = (
     }
   }
   return collisions;
+};
+
+const snapProgress = (
+  s: GameState,
+  momentum: number,
+  currentTile: Tile,
+  enteredFrom: number,
+  collisionPoint: [number, number, number],
+  radius: number,
+) => {
+  let ef = s.tilesComputed[currentTile.id]?.exits?.[enteredFrom];
+
+  // If this is a T junction and we came from the middle, the exited
+  // from tile won't have a position, so set it to the middle of the T
+  if (currentTile.type === 't' && enteredFrom === -1) {
+    ef = s.tilesComputed[currentTile.id]?.curves[0].getPointAt(1);
+  }
+
+  let newProgress = 0;
+
+  if (currentTile.type === 't') {
+    // Figure out how much along this curve we need to go, and then
+    // double it, because T junction tiles are only half width!
+    const progressToSnapTo = (TILE_WIDTH - radius) * 2.0;
+    // Then reverse it again, because if we are leaving a T, we are
+    // travelling in the negative direction, so the point on the
+    // curve we want to bonk at is inverted
+    newProgress = clamp(TILE_WIDTH - progressToSnapTo, 0, 1);
+  } else {
+    // Otherwise, take the entrance to the gate, and go back the
+    // collision distance, to determine snap position. Negate it if
+    // going negative direction.
+    const entranceToCollisionPoint = ef.distanceTo(
+      new Vector3(...collisionPoint),
+    );
+    const snappedDistance = entranceToCollisionPoint - radius;
+    newProgress = clamp(
+      momentum < 0 ? TILE_WIDTH - snappedDistance : snappedDistance,
+      0,
+      1,
+    );
+  }
+
+  return [ef, newProgress] as const;
 };
 
 const stepGameObject = (
@@ -297,52 +342,29 @@ const stepGameObject = (
         return false;
       })
       .forEach((gate) => {
-        const gp = new Vector3(...gate.position);
-        let ef = s.tilesComputed[currentTile.id]?.exits?.[enteredFrom];
+        const [ef, newProgress] = snapProgress(
+          s,
+          momentum,
+          currentTile,
+          enteredFrom,
+          gate.position,
+          gateCollisionDistance,
+        );
 
-        // If this is a T junction and we came from the middle, the exited
-        // from tile won't have a position, so set it to the middle of the T
-        if (currentTile.type === 't' && enteredFrom === -1) {
-          ef = s.tilesComputed[currentTile.id]?.curves[0].getPointAt(1);
-        }
-
-        if (ef && momentum !== 0) {
+        if (momentum !== 0) {
           playSfx['error']();
-          const entranceToGate = ef.distanceTo(gp);
-
-          let newProgress = progress;
-
-          if (currentTile.type === 't') {
-            // Figure out how much along this curve we need to go, and then
-            // double it, because T junction tiles are only half width!
-            const progressToSnapTo = (TILE_WIDTH - gateCollisionDistance) * 2.0;
-            // Then reverse it again, because if we are leaving a T, we are
-            // travelling in the negative direction, so the point on the
-            // curve we want to bonk at is inverted
-            newProgress = clamp(TILE_WIDTH - progressToSnapTo, 0, 1);
-          } else {
-            // Otherwise, take the entrance to the gate, and go back the
-            // collision distance, to determine snap position. Negate it if
-            // going negative direction.
-            const snappedDistance = entranceToGate - gateCollisionDistance;
-            newProgress = clamp(
-              momentum < 0 ? TILE_WIDTH - snappedDistance : snappedDistance,
-              0,
-              1,
-            );
-          }
-
-          const newPoint = currentCurve.getPointAt(newProgress);
-          s.setMomentum(objectId, 0);
-          s.setBonkBackTo({
-            nextDirection: momentum < 0 ? 1 : -1,
-            lastExit: ef.toArray(),
-          });
-          point = newPoint;
-          s.setPosition(objectId, point.toArray());
-          progress = newProgress;
-          s.setCurveProgress(objectId, newProgress);
         }
+
+        const newPoint = currentCurve.getPointAt(newProgress);
+        s.setMomentum(objectId, 0);
+        s.setBonkBackTo({
+          nextDirection: momentum < 0 ? 1 : -1,
+          lastExit: ef.toArray(),
+        });
+        point = newPoint;
+        s.setPosition(objectId, point.toArray());
+        progress = newProgress;
+        s.setCurveProgress(objectId, newProgress);
       });
 
     // Check for switch presses
@@ -466,20 +488,77 @@ const stepGameObject = (
     }
 
     if (collisions[objectId]) {
+      const nextPoint = currentCurve.getPointAt(
+        clamp(progress + progress * momentum * delta, 0, 1),
+      );
+      // Handle player collision
       if (objectId === PLAYER_ID) {
         const other = level.tiles.find(
           (t): t is FriendTile => t.id === collisions[objectId],
         );
         if (other) {
-          if (other.hitBehavior === 'stop' && momentum !== 0) {
+          const otherPos = s.dynamicObjects[other.id].position;
+          const isGoingTowards =
+            nextPoint.distanceTo(new Vector3(...otherPos)) <
+            point.distanceTo(new Vector3(...otherPos));
+          if (
+            isGoingTowards &&
+            other.hitBehavior === 'stop' &&
+            momentum !== 0
+          ) {
+            const [_, newProgress] = snapProgress(
+              s,
+              momentum,
+              currentTile,
+              enteredFrom,
+              otherPos,
+              SPHERE_RADIUS * 2,
+            );
+
+            const newPoint = currentCurve.getPointAt(newProgress);
             s.setMomentum(objectId, 0);
+            point = newPoint;
+            s.setPosition(objectId, point.toArray());
+            progress = newProgress;
+            s.setCurveProgress(objectId, newProgress);
+
             playSfx['metalHit']();
             playSfx['metalHit2']();
           }
         }
+        // Handle other object collision
       } else if (currentObject?.type === 'friend') {
-        if (currentObject.hitBehavior === 'stop' && momentum !== 0) {
-          s.setMomentum(objectId, 0);
+        const otherPos = s.dynamicObjects[PLAYER_ID].position;
+        const isGoingTowards =
+          nextPoint.distanceTo(new Vector3(...otherPos)) <
+          point.distanceTo(new Vector3(...otherPos));
+        if (isGoingTowards) {
+          playSfx['metalHit']();
+          playSfx['metalHit2']();
+          if (currentObject.hitBehavior === 'stop' && momentum !== 0) {
+            const [_, newProgress] = snapProgress(
+              s,
+              momentum,
+              currentTile,
+              enteredFrom,
+              otherPos,
+              SPHERE_RADIUS * 2,
+            );
+
+            const newPoint = currentCurve.getPointAt(newProgress);
+            s.setMomentum(objectId, 0);
+            point = newPoint;
+            s.setPosition(objectId, point.toArray());
+            progress = newProgress;
+            s.setCurveProgress(objectId, newProgress);
+          } else if (currentObject.hitBehavior === 'bounce') {
+            s.setMomentum(
+              objectId,
+              momentum > 0 ? -OBJECT_SPEED : OBJECT_SPEED,
+            );
+            s.setEnteredFrom(objectId, nextConnection!);
+            s.setNextConnection(objectId, enteredFrom);
+          }
         }
       }
     }
@@ -699,7 +778,6 @@ const Game = () => {
 
   // const { getCurrentViewport } = useThree((state) => state.viewport);
 
-  const marbleRef = useRef<Mesh>(null);
   const orbit = useRef<OrbitControlsImpl>(null);
   const { camera } = useThree();
 
