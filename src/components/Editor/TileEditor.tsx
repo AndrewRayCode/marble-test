@@ -5,8 +5,11 @@ import {
   ActionAxis,
   ActionType,
   ButtonActionType,
+  DeadEndBehavior,
+  DirectionBehavior,
   GateAction,
   GateActionType,
+  HitBehavior,
   NumTrip,
   RailTile,
   RotateAction,
@@ -20,6 +23,7 @@ import {
 import cx from 'classnames';
 
 import styles from './editor.module.css';
+import { parse } from 'path';
 
 const defaultGateAction: GateAction = {
   type: 'gate',
@@ -326,7 +330,99 @@ export const TileEditor = ({ selectedTileId }: { selectedTileId: string }) => {
           </select>
         </div>
       )}
-      {selectedTile.type === 'box' && (
+      {selectedTile.type === 'friend' && (
+        <>
+          <div>
+            <label className="text-slate-400">Starting Tile ID</label>
+            <input
+              className={cx(styles.input, 'mb-2 w-full')}
+              value={selectedTile.startingTileId || ''}
+              onChange={(e) => {
+                updateTileAndRecompute(selectedTileId, {
+                  startingTileId: e.target.value,
+                });
+              }}
+              type="text"
+            />
+          </div>
+          <div>
+            <label className="text-slate-400">Speed</label>
+            <input
+              className={cx(styles.input, 'mb-2 w-full')}
+              value={selectedTile.speed}
+              onChange={(e) => {
+                updateTileAndRecompute(selectedTileId, {
+                  speed: e.target.value,
+                });
+              }}
+              type="text"
+            />
+          </div>
+          <div>
+            <label className="text-slate-400">Directon Behavior</label>
+            <select
+              className={cx(styles.input, 'mb-2 w-full')}
+              value={selectedTile.startingDirection}
+              onChange={(e) => {
+                updateTileAndRecompute(selectedTileId, {
+                  startingDirection: parseInt(e.target.value) as 1 | -1,
+                });
+              }}
+            >
+              <option value="1">Positive</option>
+              <option value="-1">Negative</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-slate-400">Directon Behavior</label>
+            <select
+              className={cx(styles.input, 'mb-2 w-full')}
+              value={selectedTile.directionBehavior}
+              onChange={(e) => {
+                updateTileAndRecompute(selectedTileId, {
+                  directionBehavior: e.target.value as DirectionBehavior,
+                });
+              }}
+            >
+              <option value="right">Right</option>
+              <option value="left">Left</option>
+              <option value="random">Random</option>
+              <option value="stop">Stop</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-slate-400">Dead End Behavior</label>
+            <select
+              className={cx(styles.input, 'mb-2 w-full')}
+              value={selectedTile.deadEndBehavior}
+              onChange={(e) => {
+                updateTileAndRecompute(selectedTileId, {
+                  deadEndBehavior: e.target.value as DeadEndBehavior,
+                });
+              }}
+            >
+              <option value="bounce">Bounce</option>
+              <option value="stop">Stop</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-slate-400">Hit Behavior</label>
+            <select
+              className={cx(styles.input, 'mb-2 w-full')}
+              value={selectedTile.directionBehavior}
+              onChange={(e) => {
+                updateTileAndRecompute(selectedTileId, {
+                  hitBehavior: e.target.value as HitBehavior,
+                });
+              }}
+            >
+              <option value="bounce">Bounce</option>
+              <option value="stop">Stop</option>
+            </select>
+          </div>
+        </>
+      )}
+      {(selectedTile.type === 'box' || selectedTile.type === 'friend') && (
         <div>
           <label className="text-slate-400">Color</label>
           <input

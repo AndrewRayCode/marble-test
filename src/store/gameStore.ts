@@ -116,6 +116,20 @@ export type GateTile = TileBase & {
   defaultState: GateState;
 };
 
+export type DirectionBehavior = 'right' | 'left' | 'random' | 'stop';
+export type DeadEndBehavior = 'bounce' | 'stop';
+export type HitBehavior = 'bounce' | 'stop';
+export type FriendTile = TileBase & {
+  startingTileId: string | null;
+  type: 'friend';
+  directionBehavior: DirectionBehavior;
+  deadEndBehavior: DeadEndBehavior;
+  hitBehavior: HitBehavior;
+  speed: string;
+  startingDirection: 1 | -1;
+  color: string;
+};
+
 export const isRailTile = (tile: Tile): tile is RailTile =>
   tile.type === 'straight' || tile.type === 'quarter' || tile.type === 'cap';
 
@@ -142,7 +156,8 @@ export type Tile =
   | GroupTile
   | SphereTile
   | CoinTile
-  | GateTile;
+  | GateTile
+  | FriendTile;
 
 export type Level = Omit<DbLevel, 'id' | 'data'> & {
   id?: string;
@@ -159,7 +174,32 @@ export type ScreenArrow = {
 };
 export type ScreenArrows = ScreenArrow[];
 
-export interface GameStore {
+export const PLAYER_ID = '__player__';
+
+export type SemiDynamicState = {
+  momentum: number;
+  enteredFrom: number;
+  nextConnection: number | null;
+  currentCurveIndex: number;
+  currentTileId: string | null;
+};
+export const consSemiDynamicState = (): SemiDynamicState => ({
+  momentum: 0,
+  enteredFrom: -1,
+  nextConnection: -1,
+  currentCurveIndex: 0,
+  currentTileId: null,
+});
+export type DynamicState = {
+  curveProgress: number;
+  position: [number, number, number];
+};
+const consDynamicState = (): DynamicState => ({
+  curveProgress: 0.5,
+  position: [0, 0, 0],
+});
+
+export interface GameState {
   debug: boolean;
   toggleDebug: () => void;
 
@@ -211,22 +251,24 @@ export interface GameStore {
   setGameStarted: (gameStarted: boolean) => void;
   currentLevelId: string | null;
   setCurrentLevelId: (levelId: string) => void;
-  curveProgress: number;
-  setCurveProgress: (progress: number) => void;
-  currentTileId: string | null;
-  setCurrentTileId: (id: string) => void;
-  currentCurveIndex: number;
-  setCurrentCurveIndex: (index: number) => void;
   tilesComputed: Record<string, TileComputed>;
   setTileComputed: (tileId: string, computed: TileComputed) => void;
   setTilesComputed: (tiles: Record<string, TileComputed>) => void;
 
-  playerMomentum: number;
-  setMomentum: (delta: number) => void;
-  enteredFrom: number;
-  setEnteredFrom: (entrance: number) => void;
-  nextConnection: number | null;
-  setNextConnection: (entrance: number | null) => void;
+  semiDynamicObjects: Record<string, SemiDynamicState>;
+  dynamicObjects: Record<string, DynamicState>;
+  initiateDynamicObject: (
+    objectId: string,
+    position: [number, number, number],
+  ) => void;
+  setCurveProgress: (objectId: string, progress: number) => void;
+  setCurrentTileId: (objectId: string, id: string) => void;
+  setCurrentCurveIndex: (objectId: string, index: number) => void;
+  setMomentum: (objectId: string, momentum: number) => void;
+  setEnteredFrom: (objectId: string, entrance: number) => void;
+  setNextConnection: (objectId: string, entrance: number | null) => void;
+  setPosition: (objectId: string, position: [number, number, number]) => void;
+
   exitPositions: Record<string | number, Vector3[]>;
   setExitPositions: (tileId: string | number, exitPositions: Vector3[]) => void;
   autoSnap: (updatedComputed?: Record<string, TileComputed>) => void;
@@ -278,7 +320,7 @@ export interface GameStore {
   setVictory: (victory: boolean) => void;
 }
 
-export const useGameStore = create<GameStore>((set, get) => ({
+export const useGameStore = create<GameState>((set, get) => ({
   debug: false,
   toggleDebug: () => set((state) => ({ debug: !state.debug })),
 
@@ -334,6 +376,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const level = s.levels.find((l) => l.id === s.currentLevelId)!;
     if (isRailTile(tile) || isJunctionTile(tile)) {
       s.setTileComputed(tile.id, computeTrackTile(tile, null, null, null));
+    }
+    if (tile.type === 'friend') {
+      s.initiateDynamicObject(tile.id, tile.position);
     }
     s.updateCurrentLevel({ tiles: [...level.tiles, tile] });
   },
@@ -463,6 +508,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
           s.transforms[updated.parentId!] || null,
         ),
       );
+    } else if (updated.type === 'friend') {
+      if ('position' in update) {
+        s.setPosition(tileId, update.position as [number, number, number]);
+      }
     }
     s.updateCurrentLevel({ tiles });
   },
@@ -488,13 +537,6 @@ export const useGameStore = create<GameStore>((set, get) => ({
     get().resetLevel();
     get().autoSnap();
   },
-  curveProgress: 0,
-  setCurveProgress: (progress) => set({ curveProgress: progress }),
-  currentTileId: null,
-  setCurrentTileId: (currentTileId) => set({ currentTileId }),
-
-  currentCurveIndex: 0,
-  setCurrentCurveIndex: (currentCurveIndex) => set({ currentCurveIndex }),
 
   tilesComputed: {},
   setTileComputed: (tileId, computed) =>
@@ -506,17 +548,95 @@ export const useGameStore = create<GameStore>((set, get) => ({
     })),
   setTilesComputed: (tilesComputed) => set({ tilesComputed }),
 
-  playerMomentum: 0,
-  setMomentum: (playerMomentum) =>
-    set(() => ({
-      playerMomentum,
+  dynamicObjects: {
+    [PLAYER_ID]: consDynamicState(),
+  },
+  semiDynamicObjects: {
+    [PLAYER_ID]: consSemiDynamicState(),
+  },
+  initiateDynamicObject: (objectId, position) =>
+    set((state) => {
+      return {
+        dynamicObjects: {
+          ...state.dynamicObjects,
+          [objectId]: { ...consDynamicState(), position },
+        },
+        semiDynamicObjects: {
+          ...state.semiDynamicObjects,
+          [objectId]: consSemiDynamicState(),
+        },
+      };
+    }),
+  setMomentum: (objectId, momentum) =>
+    set((state) => ({
+      semiDynamicObjects: {
+        ...state.semiDynamicObjects,
+        [objectId]: {
+          ...state.semiDynamicObjects[objectId],
+          momentum,
+        },
+      },
     })),
-
-  enteredFrom: -1,
-  setEnteredFrom: (enteredFrom) => set({ enteredFrom }),
-
-  nextConnection: -1,
-  setNextConnection: (nextConnection) => set({ nextConnection }),
+  setCurveProgress: (objectId, curveProgress) =>
+    set((state) => ({
+      dynamicObjects: {
+        ...state.dynamicObjects,
+        [objectId]: {
+          ...state.dynamicObjects[objectId],
+          curveProgress,
+        },
+      },
+    })),
+  setCurrentTileId: (objectId, currentTileId) =>
+    set((state) => ({
+      semiDynamicObjects: {
+        ...state.semiDynamicObjects,
+        [objectId]: {
+          ...state.semiDynamicObjects[objectId],
+          currentTileId,
+        },
+      },
+    })),
+  setCurrentCurveIndex: (objectId, currentCurveIndex) =>
+    set((state) => ({
+      semiDynamicObjects: {
+        ...state.semiDynamicObjects,
+        [objectId]: {
+          ...state.semiDynamicObjects[objectId],
+          currentCurveIndex,
+        },
+      },
+    })),
+  setNextConnection: (objectId, nextConnection) =>
+    set((state) => ({
+      semiDynamicObjects: {
+        ...state.semiDynamicObjects,
+        [objectId]: {
+          ...state.semiDynamicObjects[objectId],
+          nextConnection,
+        },
+      },
+    })),
+  setPosition: (objectId, position) =>
+    set((state) => ({
+      dynamicObjects: {
+        ...state.dynamicObjects,
+        [objectId]: {
+          ...state.dynamicObjects[objectId],
+          position,
+        },
+      },
+    })),
+  setEnteredFrom: (objectId, enteredFrom) =>
+    set((state) => ({
+      semiDynamicObjects: {
+        ...state.semiDynamicObjects,
+        [objectId]: {
+          ...state.semiDynamicObjects[objectId],
+          enteredFrom,
+        },
+      },
+    })),
 
   exitPositions: {},
   setExitPositions: (tileId, exitPositions) =>
@@ -780,26 +900,67 @@ export const useGameStore = create<GameStore>((set, get) => ({
       {},
     );
 
-    const currentTile = level.tiles.find(
+    const startingTile = level.tiles.find(
       (t) => t.id === level.startingTileId,
     ) as TrackTile | undefined;
-    console.log('Game reset! Starting on', { currentTile });
+    console.log('Game reset! Starting on', { startingTile });
+
+    const friends = level.tiles.filter((t) => t.type === 'friend');
 
     set({
-      curveProgress:
-        currentTile?.type === 'cap' || currentTile?.type === 't' ? 1 : 0.5,
-      currentCurveIndex: 0,
-      enteredFrom: currentTile?.type === 't' ? -1 : 0,
-      // TODO: Need a starting connection too!
-      nextConnection: -1,
-      playerMomentum: 0,
+      semiDynamicObjects: {
+        [PLAYER_ID]: {
+          ...consSemiDynamicState(),
+          enteredFrom: startingTile?.type === 't' ? -1 : 0,
+          // TODO: Need a starting connection too!
+          nextConnection: -1,
+          currentTileId: startingTile?.id || null,
+        },
+        ...friends.reduce((acc, t) => {
+          const tile = level.tiles.find(
+            (tt): tt is TrackTile => tt.id === t.startingTileId,
+          );
+          return {
+            ...acc,
+            [t.id]: {
+              ...consSemiDynamicState(),
+              momentum: parseFloat(t.speed) * t.startingDirection,
+              enteredFrom: tile?.type === 't' ? -1 : 0,
+              // TODO: Need a starting connection too!
+              nextConnection: -1,
+              currentTileId: tile?.id || null,
+            },
+          };
+        }, {}),
+      },
+      dynamicObjects: {
+        [PLAYER_ID]: {
+          ...consDynamicState(),
+          curveProgress:
+            startingTile?.type === 'cap' || startingTile?.type === 't'
+              ? 1
+              : 0.5,
+        },
+        ...friends.reduce((acc, t) => {
+          const tile = level.tiles.find(
+            (tt): tt is TrackTile => tt.id === t.startingTileId,
+          );
+          return {
+            ...acc,
+            [t.id]: {
+              ...consDynamicState(),
+              curveProgress:
+                tile?.type === 'cap' || tile?.type === 't' ? 1 : 0.5,
+            },
+          };
+        }, {}),
+      },
       transforms: {},
       debugPoints: [],
       bonkBackTo: null,
       collectedItems: new Set(),
       gateStates: {},
       tilesComputed,
-      currentTileId: currentTile?.id,
       victory: false,
     });
     s.autoSnap(tilesComputed);

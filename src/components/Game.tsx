@@ -5,7 +5,7 @@ import useSound from 'use-sound';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
 import { Mesh, Vector2, Vector3 } from 'three';
 import { clamp } from 'three/src/math/MathUtils.js';
-import { Canvas, useThree } from '@react-three/fiber';
+import { Camera, Canvas, useThree } from '@react-three/fiber';
 import {
   Environment,
   OrbitControls,
@@ -30,8 +30,15 @@ import {
   useGameStore,
   GateTile,
   isJunctionTile,
+  PLAYER_ID,
+  GameState,
+  Level,
+  SemiDynamicState,
+  Tile,
+  DynamicState,
+  FriendTile,
 } from '@/store/gameStore';
-import { toScreen } from '@/util/math';
+import { randomInt, toScreen } from '@/util/math';
 import OnScreenArrows from './OnScreenArrows';
 import EditorComponent from './Editor/Editor';
 
@@ -55,7 +62,7 @@ import Toggle from './Tiles/Toggle';
 import Straightaway from './Tiles/Straightaway';
 import QuarterTurn from './Tiles/QuarterTurn';
 import Junction from './Tiles/Junction';
-import { Level } from '@prisma/client';
+import { Level as DbLevel } from '@prisma/client';
 import EditorUI from './Editor/EditorUI';
 import Cap from './Tiles/Cap';
 import Box from './Tiles/Box';
@@ -66,6 +73,8 @@ import Group from './Tiles/Group';
 import { useBackgroundRender, useKeyPress } from '@/util/react';
 
 import styles from './game.module.css';
+import Player from './Tiles/Player';
+import Friend from './Tiles/Friend';
 
 const lowest = (a: {
   left: number;
@@ -92,7 +101,571 @@ const screenUp = new Vector2(0, -1);
 const screenDown = new Vector2(0, 1);
 
 type GameProps = {
-  dbLevels: Level[];
+  dbLevels: DbLevel[];
+};
+
+const findCollisions = (
+  dynamicObjects: Record<string, DynamicState>,
+  radius: number,
+): Record<string, string> => {
+  const collisions: Record<string, string> = {};
+  const checks = Object.entries(dynamicObjects);
+  if (checks.length < 2) return {};
+
+  // Single pass comparison avoiding duplicate checks
+  for (let i = 0; i < checks.length - 1; i++) {
+    for (let j = i + 1; j < checks.length; j++) {
+      const one = checks[i];
+      const two = checks[j];
+      const distanceSquared = new Vector3(...one[1].position).distanceToSquared(
+        new Vector3(...two[1].position),
+      );
+
+      if (distanceSquared < radius * radius) {
+        collisions[one[0]] = two[0];
+        collisions[two[0]] = one[0];
+      }
+    }
+  }
+  return collisions;
+};
+
+const stepGameObject = (
+  delta: number,
+  level: Level,
+  objectId: string,
+  keys: Record<string, boolean>,
+  camera: Camera,
+  arrowPositions: Record<string, Vector3[]>,
+  s: GameState,
+  collisions: Record<string, string>,
+  playSfx: Record<string, () => void>,
+) => {
+  const currentTileId = s.semiDynamicObjects[objectId].currentTileId;
+  if (!currentTileId) {
+    return;
+  }
+  const currentTile = level.tiles.find(
+    (t): t is TrackTile => t.id === currentTileId,
+  );
+  const currentObject = level.tiles.find((t) => t.id === objectId);
+  const currentTilePosition = s.tilesComputed[currentTileId]?.position;
+
+  const tileScreen = toScreen(currentTilePosition, camera, {
+    // r3f viewport size is busted - reports much smaller numbers
+    width: window.innerWidth,
+    height: window.innerHeight,
+  });
+  // let debug = document.getElementById(`debugtile`);
+  // if (!debug) {
+  //   debug = document.createElement('div');
+  //   debug.id = `debugtile`;
+  //   debug.style.position = 'absolute';
+  //   debug.style.width = '10px';
+  //   debug.style.height = '10px';
+  //   debug.style.background = 'black';
+  //   debug.style.zIndex = '1000';
+  //   document.body.appendChild(debug);
+  // }
+  // debug.style.left = `${tileScreen.x}px`;
+  // debug.style.top = `${tileScreen.y}px`;
+
+  const entranceDistances = arrowPositions[objectId].map(
+    (position, entrance) => {
+      // const viewport = getCurrentViewport();
+      const screen = toScreen(position, camera, {
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
+      // Create vector pointing from marble to entrance
+      const v = new Vector2(screen.x - tileScreen.x, screen.y - tileScreen.y);
+      // let debug = document.getElementById(`debug${entrance}`);
+      // if (!debug) {
+      //   debug = document.createElement('div');
+      //   debug.id = `debug${entrance}`;
+      //   debug.style.position = 'absolute';
+      //   debug.style.width = '7px';
+      //   debug.style.height = '7px';
+      //   debug.style.background = ['red', 'green', 'blue'][entrance];
+      //   debug.style.zIndex = '1000';
+      //   document.body.appendChild(debug);
+      // }
+      // debug.style.left = `${screen.x}px`;
+      // debug.style.top = `${screen.y}px`;
+      return {
+        entrance,
+        position,
+        left: screenLeft.angleTo(v),
+        right: screenRight.angleTo(v),
+        up: screenUp.angleTo(v),
+        down: screenDown.angleTo(v),
+      };
+    },
+  );
+
+  const seen = new Set<string>();
+  const arrowsForEntrances = entranceDistances.reduce((acc, d, i) => {
+    // Figure out which cardinal direction this is most pointing
+    const arrow = lowest(d);
+    // Only one entrance per cardinal direction!
+    if (!seen.has(arrow)) {
+      seen.add(arrow);
+      return acc.concat({
+        position: d.position,
+        entrance: d.entrance,
+        arrow: lowest(d),
+      });
+    }
+    return acc;
+  }, [] as ScreenArrows);
+
+  if (objectId === PLAYER_ID) {
+    s.setScreenArrows(arrowsForEntrances);
+  }
+
+  const directions = arrowsForEntrances.reduce(
+    (acc, arrow) => {
+      acc[arrow.arrow] = arrow;
+      return acc;
+    },
+    {} as Record<string, ScreenArrow>,
+  );
+
+  const { currentCurveIndex, enteredFrom, nextConnection, momentum } =
+    s.semiDynamicObjects[objectId];
+  const OBJECT_SPEED =
+    objectId === PLAYER_ID
+      ? PLAYER_SPEED
+      : parseFloat((currentObject as FriendTile)?.speed || '0');
+  const { curveProgress } = s.dynamicObjects[objectId];
+  const isPositive = momentum >= 0;
+
+  // Type safe bail-out for later, like falling out of level
+  if (!currentTile) {
+    return;
+  }
+
+  const currentCurve =
+    s.tilesComputed[currentTile.id]?.curves?.[currentCurveIndex];
+
+  let progress = clamp(
+    curveProgress +
+      momentum *
+        delta *
+        (currentTile.type === 'cap'
+          ? 4.0
+          : currentTile.type === 't'
+            ? 2.0
+            : 1.0),
+    0,
+    1,
+  );
+
+  s.setCurveProgress(objectId, progress);
+
+  if (currentCurve && currentTile) {
+    // Get the point along the curve
+    let point = currentCurve.getPointAt(progress);
+    s.setPosition(objectId, point.toArray());
+
+    level.tiles
+      .filter((t) => t.type === 'coin' && !s.collectedItems.has(t.id))
+      .forEach((coin) => {
+        const isNear =
+          point.distanceTo(new Vector3(...coin.position)) <
+          INITIAL_SPHERE_RADIUS;
+        if (isNear) {
+          playSfx['coin']();
+          playSfx['money']();
+          s.collectItem(coin.id);
+        }
+      });
+
+    // Check for gate collision
+    const gateCollisionDistance = SPHERE_RADIUS + GATE_DEPTH / 2;
+    level.tiles
+      .filter((t): t is GateTile => {
+        if (
+          t.type === 'gate' &&
+          (s.gateStates[t.id] === 'closed' ||
+            (!(t.id in s.gateStates) && t.defaultState === 'closed'))
+        ) {
+          const gp = new Vector3(...t.position);
+          const currentDistance = point.distanceTo(gp);
+          return currentDistance <= gateCollisionDistance;
+        }
+        return false;
+      })
+      .forEach((gate) => {
+        const gp = new Vector3(...gate.position);
+        let ef = s.tilesComputed[currentTile.id]?.exits?.[enteredFrom];
+
+        // If this is a T junction and we came from the middle, the exited
+        // from tile won't have a position, so set it to the middle of the T
+        if (currentTile.type === 't' && enteredFrom === -1) {
+          ef = s.tilesComputed[currentTile.id]?.curves[0].getPointAt(1);
+        }
+
+        if (ef && momentum !== 0) {
+          playSfx['error']();
+          const entranceToGate = ef.distanceTo(gp);
+
+          let newProgress = progress;
+
+          if (currentTile.type === 't') {
+            // Figure out how much along this curve we need to go, and then
+            // double it, because T junction tiles are only half width!
+            const progressToSnapTo = (TILE_WIDTH - gateCollisionDistance) * 2.0;
+            // Then reverse it again, because if we are leaving a T, we are
+            // travelling in the negative direction, so the point on the
+            // curve we want to bonk at is inverted
+            newProgress = clamp(TILE_WIDTH - progressToSnapTo, 0, 1);
+          } else {
+            // Otherwise, take the entrance to the gate, and go back the
+            // collision distance, to determine snap position. Negate it if
+            // going negative direction.
+            const snappedDistance = entranceToGate - gateCollisionDistance;
+            newProgress = clamp(
+              momentum < 0 ? TILE_WIDTH - snappedDistance : snappedDistance,
+              0,
+              1,
+            );
+          }
+
+          const newPoint = currentCurve.getPointAt(newProgress);
+          s.setMomentum(objectId, 0);
+          s.setBonkBackTo({
+            nextDirection: momentum < 0 ? 1 : -1,
+            lastExit: ef.toArray(),
+          });
+          point = newPoint;
+          s.setPosition(objectId, point.toArray());
+          progress = newProgress;
+          s.setCurveProgress(objectId, newProgress);
+        }
+      });
+
+    // Check for switch presses
+    level.tiles
+      .filter((t): t is ButtonTile => t.type === 'button')
+      .forEach((button) => {
+        const isNear = point.distanceTo(new Vector3(...button.position)) < 0.5;
+        const on = s.booleanSwitches[button.id];
+        const enabled =
+          s.enabledBooleanSwitchesFor[objectId]?.[button.id] !== false;
+        const { actions } = button;
+
+        // Rolling over action triggers each time, and rolling away resets
+        // the button itself (independent of the action)
+        if (button.actionType === 'click') {
+          if (enabled && isNear) {
+            playSfx['btn']();
+            s.setEnabledBooleanSwitchesFor(objectId, button.id, false);
+
+            actions.forEach((action) => {
+              if (action.type === 'gate') {
+                playSfx['gadget2']();
+              } else if (action.type == 'rotation') {
+                playSfx['gadget1']();
+              } else if (action.type === 'translation') {
+                playSfx['sliding']();
+              }
+              s.applyAction(currentTile, action);
+            });
+          } else if (!enabled && !isNear) {
+            s.setEnabledBooleanSwitchesFor(objectId, button.id, true);
+          }
+          // Roling over the button triggers the action each time, and the button
+          // state stays in this state until hit again, independent of the action
+        } else if (button.actionType === 'toggle') {
+          if (enabled && isNear) {
+            playSfx['btn']();
+            s.setEnabledBooleanSwitchesFor(objectId, button.id, false);
+            s.setBooleanSwitch(button.id, !on);
+
+            if (!on) {
+              actions.forEach((action) => {
+                if (action.type === 'gate') {
+                  playSfx['gadget2']();
+                } else if (action.type == 'rotation') {
+                  playSfx['gadget1']();
+                }
+                s.applyAction(currentTile, action);
+              });
+            } else {
+              actions.forEach((action) => {
+                if (action.type === 'gate') {
+                  playSfx['gadget2']();
+                } else if (action.type == 'rotation') {
+                  playSfx['gadget1']();
+                } else if (action.type === 'translation') {
+                  playSfx['sliding']();
+                }
+                s.clearAction(currentTile, action);
+              });
+            }
+          } else if (!enabled && !isNear) {
+            s.setEnabledBooleanSwitchesFor(objectId, button.id, true);
+          }
+          // Need to stay over
+        } else if (button.actionType === 'hold') {
+          if (enabled && isNear) {
+            playSfx['btn']();
+            s.setEnabledBooleanSwitchesFor(objectId, button.id, false);
+            s.setBooleanSwitch(button.id, !on);
+            actions.forEach((action) => {
+              if (action.type === 'gate') {
+                playSfx['gadget2']();
+              } else if (action.type == 'rotation') {
+                playSfx['gadget1']();
+              } else if (action.type === 'translation') {
+                playSfx['sliding']();
+              }
+              s.applyAction(currentTile, action);
+            });
+          }
+          if (!enabled && !isNear) {
+            playSfx['btn']();
+            s.setEnabledBooleanSwitchesFor(objectId, button.id, true);
+            s.setBooleanSwitch(button.id, !on);
+
+            actions.forEach((action) => {
+              if (action.type === 'gate') {
+                playSfx['gadget2']();
+              } else if (action.type == 'rotation') {
+                playSfx['gadget1']();
+              } else if (action.type === 'translation') {
+                playSfx['sliding']();
+              }
+              s.clearAction(currentTile, action);
+            });
+          }
+        }
+      });
+
+    const isDown =
+      objectId === PLAYER_ID && keys.down && directions.down && !s.victory;
+    const isLeft =
+      objectId === PLAYER_ID && keys.left && directions.left && !s.victory;
+    const isRight =
+      objectId === PLAYER_ID && keys.right && directions.right && !s.victory;
+    const isUp =
+      objectId === PLAYER_ID && keys.up && directions.up && !s.victory;
+    const isValidUserChoosenDirection = isDown || isLeft || isRight || isUp;
+
+    if (s.bonkBackTo && isValidUserChoosenDirection) {
+      s.setMomentum(objectId, s.bonkBackTo.nextDirection * OBJECT_SPEED);
+      s.clearBonkBackTo();
+    }
+
+    // If we're on a tile and stopped - like if the game starts on a straight
+    // away, let the user move out of it. Buuuut how do we choose the movement
+    // direction?
+    if (!s.bonkBackTo && momentum === 0 && isValidUserChoosenDirection) {
+      s.setMomentum(objectId, isUp || isLeft ? OBJECT_SPEED : -OBJECT_SPEED);
+    }
+
+    if (collisions[objectId]) {
+      if (objectId === PLAYER_ID) {
+        const other = level.tiles.find(
+          (t): t is FriendTile => t.id === collisions[objectId],
+        );
+        if (other) {
+          if (other.hitBehavior === 'stop' && momentum !== 0) {
+            s.setMomentum(objectId, 0);
+            playSfx['metalHit']();
+            playSfx['metalHit2']();
+          }
+        }
+      } else if (currentObject?.type === 'friend') {
+        if (currentObject.hitBehavior === 'stop' && momentum !== 0) {
+          s.setMomentum(objectId, 0);
+        }
+      }
+    }
+
+    let nextTile: TrackTile | undefined;
+    let nextIdx: number | null | undefined;
+    let nextId: string | null | undefined;
+    let nextEntrance: number | null | undefined;
+
+    // We are the end of this curve in our direction of travel
+    if ((progress >= 1.0 && isPositive) || (progress <= 0 && !isPositive)) {
+      // We have landed on the junction in the middle of the T
+      if (currentTile.type === 'cap') {
+        // We are leaving
+        if (nextConnection === 0) {
+          nextId = currentTile.connections[0];
+          nextEntrance = currentTile.entrances[0];
+          // Progress is 100% and we went the right way to get out, so get out
+        } else if (isValidUserChoosenDirection) {
+          s.setEnteredFrom(objectId, -1);
+          s.setNextConnection(objectId, 0);
+          s.setMomentum(objectId, -OBJECT_SPEED);
+          s.setCurveProgress(objectId, 1.0);
+        } else if (currentObject?.type === 'friend') {
+          if (currentObject.deadEndBehavior === 'stop' && momentum !== 0) {
+            if (momentum !== 0) {
+              s.setMomentum(objectId, 0);
+              playSfx['metalHit']();
+              playSfx['metalHit2']();
+            }
+          } else if (currentObject.deadEndBehavior === 'bounce') {
+            s.setEnteredFrom(objectId, -1);
+            s.setNextConnection(objectId, 0);
+            s.setMomentum(objectId, -OBJECT_SPEED);
+            s.setCurveProgress(objectId, 1.0);
+            playSfx['metalHit']();
+            playSfx['metalHit2']();
+          }
+          // We hit the center of the cap
+        } else if (momentum !== 0) {
+          s.setMomentum(objectId, 0);
+          playSfx['metalHit']();
+          playSfx['metalHit2']();
+        }
+      } else if (currentTile.type == 't') {
+        // We are going towards, and have landed on, the center
+        if (nextConnection === -1) {
+          if (objectId === PLAYER_ID) {
+            let userChoiceConnection: number | undefined;
+            if (isValidUserChoosenDirection) {
+              userChoiceConnection = isDown
+                ? directions.down.entrance
+                : isLeft
+                  ? directions.left.entrance
+                  : isRight
+                    ? directions.right.entrance
+                    : directions.up.entrance;
+            }
+
+            // auto continue through
+            // const noKey = !isDown && !isLeft && !isRight && !isUp;
+            // const autoLeft = enteredFrom === 2 && noKey;
+            // const autoRight = enteredFrom === 0 && noKey;
+            // if (autoLeft || autoRight) {
+            //   userChoiceConnection = autoLeft ? 0 : 1;
+            // }
+
+            if (userChoiceConnection !== undefined) {
+              // Start from the T junction
+              s.setEnteredFrom(objectId, -1);
+
+              s.setNextConnection(objectId, userChoiceConnection);
+              // We are moving out from T so negative momentum
+              s.setMomentum(objectId, -OBJECT_SPEED);
+              s.setCurrentCurveIndex(objectId, userChoiceConnection);
+              // Start at the far end of the curve!
+              s.setCurveProgress(objectId, 1.0);
+              // We are at the t junction, we came from the bottom, and no keys
+              // were pressed, so stop!
+            } else if (momentum !== 0) {
+              if (enteredFrom === 1) {
+                playSfx['metalHit']();
+                playSfx['metalHit2']();
+              }
+              s.setMomentum(objectId, 0);
+            }
+          } else if (currentObject?.type === 'friend') {
+            // We hit the T from the bottom, play a sound
+            if (enteredFrom === 1 && momentum !== 0) {
+              playSfx['metalHit']();
+              playSfx['metalHit2']();
+            }
+            const db = currentObject.directionBehavior;
+            // If we should stop and we started from the end of the T, stop
+            if (db === 'stop' && enteredFrom === 1) {
+              s.setMomentum(objectId, 0);
+              // Otherwise se keep going
+            } else {
+              // Start from the T junction
+              s.setEnteredFrom(objectId, -1);
+
+              const nextConnection =
+                db === 'left' ? 0 : db === 'right' ? 1 : randomInt(0, 2);
+              s.setNextConnection(objectId, nextConnection);
+              // We are moving out from T so negative momentum
+              s.setMomentum(objectId, -OBJECT_SPEED);
+              s.setCurrentCurveIndex(objectId, nextConnection);
+              // Start at the far end of the curve!
+              s.setCurveProgress(objectId, 1.0);
+            }
+          }
+          // We are getting the hell out of here
+        } else if (enteredFrom === -1) {
+          nextId = currentTile.connections[nextConnection!];
+          nextEntrance = currentTile.entrances[nextConnection!];
+
+          if (!nextId || nextEntrance === undefined) {
+            playSfx['springboard']();
+            s.setMomentum(
+              objectId,
+              momentum > 0 ? -OBJECT_SPEED : OBJECT_SPEED,
+            );
+            s.setEnteredFrom(objectId, nextConnection!);
+            s.setNextConnection(objectId, -1);
+            // Another an option
+            // s.resetLevel();
+          }
+        }
+      } else {
+        // We're on a straightaway
+
+        // Positive momentum means we choose this tile's last exit
+        nextIdx = isPositive ? 1 : 0;
+        nextId = currentTile.connections[nextIdx];
+        nextEntrance = currentTile.entrances[nextIdx];
+
+        if (!nextId || nextEntrance === undefined) {
+          playSfx['springboard']();
+          s.setMomentum(objectId, momentum > 0 ? -OBJECT_SPEED : OBJECT_SPEED);
+          s.setEnteredFrom(objectId, nextConnection!);
+          s.setNextConnection(objectId, nextConnection === 0 ? 1 : 0);
+        }
+      }
+
+      // If we detected there is somewhere to go...
+      if (nextId !== undefined || nextEntrance !== undefined) {
+        if (nextId === null || nextEntrance == null) {
+          throw new Error('wtf?');
+        } else {
+          nextTile = level.tiles.find(
+            (tile): tile is TrackTile => tile.id === nextId,
+          )!;
+        }
+
+        if (!nextTile) {
+          console.error('bad next tile', { currentTile, level });
+          throw new Error('bad next tile');
+        }
+
+        s.setCurrentTileId(objectId, nextTile.id);
+
+        // If connecting to a striaght tile
+        if (isRailTile(nextTile)) {
+          s.setCurrentCurveIndex(objectId, 0);
+          s.setEnteredFrom(objectId, nextEntrance);
+          // Go towards other connection
+          s.setNextConnection(objectId, nextEntrance === 0 ? 1 : 0);
+          // If we entered from direction of travel, go positive. Otherwise go negative
+          s.setMomentum(
+            objectId,
+            nextEntrance === 0 ? OBJECT_SPEED : -OBJECT_SPEED,
+          );
+          s.setCurveProgress(objectId, nextEntrance === 0 ? 0 : 1);
+          // If connecting to a T junction
+        } else if (nextTile.type === 't') {
+          s.setCurrentCurveIndex(objectId, nextEntrance);
+          s.setEnteredFrom(objectId, nextEntrance);
+          // We are entering a choice tile - the next connection is t center
+          s.setNextConnection(objectId, -1);
+          // All T junction tile curves point inward so go positive
+          s.setMomentum(objectId, OBJECT_SPEED);
+          s.setCurveProgress(objectId, 0);
+        }
+      }
+    }
+  }
 };
 
 const Game = () => {
@@ -102,21 +675,16 @@ const Game = () => {
   const debugPoints = useGameStore((state) => state.debugPoints);
   const toggleDebug = useGameStore((state) => state.toggleDebug);
   const resetLevel = useGameStore((state) => state.resetLevel);
-  const setScreenArrows = useGameStore((state) => state.setScreenArrows);
-  const setCurveProgress = useGameStore((state) => state.setCurveProgress);
-  const setCurrentTileId = useGameStore((state) => state.setCurrentTileId);
-  const currentCurveIndex = useGameStore((state) => state.currentCurveIndex);
-  const levels = useGameStore((state) => state.levels);
-  const setCurrentLevelId = useGameStore((state) => state.setCurrentLevelId);
-  const setCurrentCurveIndex = useGameStore(
-    (state) => state.setCurrentCurveIndex,
+  const currentCurveIndex = useGameStore(
+    (state) => state.semiDynamicObjects[PLAYER_ID].currentCurveIndex,
   );
+  const levels = useGameStore((state) => state.levels);
   const debug = useGameStore((state) => state.debug);
-  const currentTileId = useGameStore((state) => state.currentTileId);
+  const currentTileId = useGameStore(
+    (state) => state.semiDynamicObjects[PLAYER_ID].currentTileId,
+  );
   const currentLevelId = useGameStore((state) => state.currentLevelId);
-  const setMomentum = useGameStore((state) => state.setMomentum);
-  const setEnteredFrom = useGameStore((state) => state.setEnteredFrom);
-  const setNextConnection = useGameStore((state) => state.setNextConnection);
+
   const gameStarted = useGameStore((state) => state.gameStarted);
   const setGameStarted = useGameStore((state) => state.setGameStarted);
   const isEditing = useGameStore((state) => state.isEditing);
@@ -125,7 +693,7 @@ const Game = () => {
   const collectedItems = useGameStore((state) => state.collectedItems);
   const bonkBackTo = useGameStore((state) => state.bonkBackTo);
   const setVictory = useGameStore((state) => state.setVictory);
-  const victory = useGameStore((state) => state.victory);
+  const semiDynamicObjects = useGameStore((state) => state.semiDynamicObjects);
 
   const [gameObjectsRef, renderBackground] = useBackgroundRender();
 
@@ -155,19 +723,28 @@ const Game = () => {
 
   const arrowPositions = useMemo(
     () =>
-      !currentTile
-        ? []
-        : currentTile?.type === 't'
-          ? tilesComputed[currentTile.id].exits
-          : currentTile?.type === 'cap'
-            ? [tilesComputed[currentTile.id]?.curves[0].getPointAt(0)]
-            : bonkBackTo
-              ? [new Vector3(...bonkBackTo.lastExit)]
-              : [
-                  tilesComputed[currentTile.id]?.curves[0].getPointAt(0),
-                  tilesComputed[currentTile.id]?.curves[0].getPointAt(1),
-                ],
-    [tilesComputed, currentTile, bonkBackTo],
+      Object.entries(semiDynamicObjects).reduce<Record<string, Vector3[]>>(
+        (acc, [objectId, { currentTileId }]) => {
+          const currentTile = level?.tiles.find((t) => t.id === currentTileId);
+          return {
+            ...acc,
+            [objectId]: !currentTile
+              ? []
+              : currentTile?.type === 't'
+                ? tilesComputed[currentTile.id].exits
+                : currentTile?.type === 'cap'
+                  ? [tilesComputed[currentTile.id]?.curves[0].getPointAt(0)]
+                  : bonkBackTo
+                    ? [new Vector3(...bonkBackTo.lastExit)]
+                    : [
+                        tilesComputed[currentTile.id]?.curves[0].getPointAt(0),
+                        tilesComputed[currentTile.id]?.curves[0].getPointAt(1),
+                      ],
+          };
+        },
+        {},
+      ),
+    [tilesComputed, currentTileId, bonkBackTo],
   );
 
   useKeyPress('edit', () => setIsEditing(!isEditing));
@@ -202,6 +779,41 @@ const Game = () => {
     volume: 0.9,
   });
 
+  const sfx = useMemo(
+    () => ({
+      btn: playBtnSfx,
+      coin: playCoinSfx,
+      money: playMoneySfx,
+      error: playErrorSfx,
+      success: playSuccessSfx,
+      metalHit: playMetalHitSfx,
+      metalHit2: playMetalHit2Sfx,
+      springboard: playSpringboardSfx,
+      gadget1: playGadget1Sfx,
+      gadget2: playGadget2Sfx,
+      doorOpen: playDoorOpenSfx,
+      cinderblock: playCinderblockSfx,
+      sliding: playSlidingSfx,
+      arcadeWin: playArcadeWinSfx,
+    }),
+    [
+      playBtnSfx,
+      playCoinSfx,
+      playMoneySfx,
+      playErrorSfx,
+      playSuccessSfx,
+      playMetalHitSfx,
+      playMetalHit2Sfx,
+      playSpringboardSfx,
+      playGadget1Sfx,
+      playGadget2Sfx,
+      playDoorOpenSfx,
+      playCinderblockSfx,
+      playSlidingSfx,
+      playArcadeWinSfx,
+    ],
+  );
+
   const currentTilePosition = useMemo(() => {
     if (currentTileId) {
       return tilesComputed[currentTileId]?.position;
@@ -226,457 +838,46 @@ const Game = () => {
       return;
     }
 
-    const tileScreen = toScreen(currentTilePosition!, camera, {
-      // r3f viewport size is busted - reports much smaller numbers
-      width: window.innerWidth,
-      height: window.innerHeight,
-    });
-    // let debug = document.getElementById(`debugtile`);
-    // if (!debug) {
-    //   debug = document.createElement('div');
-    //   debug.id = `debugtile`;
-    //   debug.style.position = 'absolute';
-    //   debug.style.width = '10px';
-    //   debug.style.height = '10px';
-    //   debug.style.background = 'black';
-    //   debug.style.zIndex = '1000';
-    //   document.body.appendChild(debug);
-    // }
-    // debug.style.left = `${tileScreen.x}px`;
-    // debug.style.top = `${tileScreen.y}px`;
+    const collisions = findCollisions(s.dynamicObjects, SPHERE_RADIUS * 2);
 
-    const entranceDistances = arrowPositions.map((position, entrance) => {
-      // const viewport = getCurrentViewport();
-      const screen = toScreen(position, camera, {
-        width: window.innerWidth,
-        height: window.innerHeight,
-      });
-      // Create vector pointing from marble to entrance
-      const v = new Vector2(screen.x - tileScreen.x, screen.y - tileScreen.y);
-      // let debug = document.getElementById(`debug${entrance}`);
-      // if (!debug) {
-      //   debug = document.createElement('div');
-      //   debug.id = `debug${entrance}`;
-      //   debug.style.position = 'absolute';
-      //   debug.style.width = '7px';
-      //   debug.style.height = '7px';
-      //   debug.style.background = ['red', 'green', 'blue'][entrance];
-      //   debug.style.zIndex = '1000';
-      //   document.body.appendChild(debug);
-      // }
-      // debug.style.left = `${screen.x}px`;
-      // debug.style.top = `${screen.y}px`;
-      return {
-        entrance,
-        position,
-        left: screenLeft.angleTo(v),
-        right: screenRight.angleTo(v),
-        up: screenUp.angleTo(v),
-        down: screenDown.angleTo(v),
-      };
-    });
-
-    const seen = new Set<string>();
-    const arrowsForEntrances = entranceDistances.reduce((acc, d, i) => {
-      // Figure out which cardinal direction this is most pointing
-      const arrow = lowest(d);
-      // Only one entrance per cardinal direction!
-      if (!seen.has(arrow)) {
-        seen.add(arrow);
-        return acc.concat({
-          position: d.position,
-          entrance: d.entrance,
-          arrow: lowest(d),
-        });
-      }
-      return acc;
-    }, [] as ScreenArrows);
-
-    setScreenArrows(arrowsForEntrances);
-
-    const directions = arrowsForEntrances.reduce(
-      (acc, arrow) => {
-        acc[arrow.arrow] = arrow;
-        return acc;
-      },
-      {} as Record<string, ScreenArrow>,
+    stepGameObject(
+      delta,
+      level,
+      PLAYER_ID,
+      key(),
+      camera,
+      arrowPositions,
+      s,
+      collisions,
+      sfx,
     );
-
-    const isPositive = s.playerMomentum >= 0;
-
-    // Type safe bail-out for later, like falling out of level
-    if (!currentTile) {
-      return;
+    if (!isEditing) {
+      level.tiles
+        .filter((t) => t.type === 'friend')
+        .forEach((tile) => {
+          stepGameObject(
+            delta,
+            level,
+            tile.id,
+            key(),
+            camera,
+            arrowPositions,
+            s,
+            collisions,
+            sfx,
+          );
+        });
     }
 
-    let progress = clamp(
-      s.curveProgress +
-        s.playerMomentum *
-          delta *
-          (currentTile.type === 'cap'
-            ? 4.0
-            : currentTile.type === 't'
-              ? 2.0
-              : 1.0),
-      0,
-      1,
-    );
-
-    setCurveProgress(progress);
-
-    if (marbleRef.current && currentCurve && currentTile) {
-      // Get the point along the curve
-      let point = currentCurve.getPointAt(progress);
-
-      // Update the sphere's position
-      marbleRef.current.position.copy(point);
-
-      level.tiles
-        .filter((t) => t.type === 'coin' && !s.collectedItems.has(t.id))
-        .forEach((coin) => {
-          const isNear =
-            point.distanceTo(new Vector3(...coin.position)) <
-            INITIAL_SPHERE_RADIUS;
-          if (isNear) {
-            playCoinSfx();
-            playMoneySfx();
-            s.collectItem(coin.id);
-          }
-        });
-
-      // Check for gate collision
-      const gateCollisionDistance = SPHERE_RADIUS + GATE_DEPTH / 2;
-      level.tiles
-        .filter((t): t is GateTile => {
-          if (
-            t.type === 'gate' &&
-            (s.gateStates[t.id] === 'closed' ||
-              (!(t.id in s.gateStates) && t.defaultState === 'closed'))
-          ) {
-            const gp = new Vector3(...t.position);
-            const currentDistance = point.distanceTo(gp);
-            return currentDistance <= gateCollisionDistance;
-          }
-          return false;
-        })
-        .forEach((gate) => {
-          const gp = new Vector3(...gate.position);
-          let ef = s.tilesComputed[currentTile.id]?.exits?.[s.enteredFrom];
-
-          // If this is a T junction and we came from the middle, the exited
-          // from tile won't have a position, so set it to the middle of the T
-          if (currentTile.type === 't' && s.enteredFrom === -1) {
-            ef = s.tilesComputed[currentTile.id]?.curves[0].getPointAt(1);
-          }
-
-          if (ef && s.playerMomentum !== 0) {
-            playErrorSfx();
-            const entranceToGate = ef.distanceTo(gp);
-
-            let newProgress = progress;
-
-            if (currentTile.type === 't') {
-              // Figure out how much along this curve we need to go, and then
-              // double it, because T junction tiles are only half width!
-              const progressToSnapTo =
-                (TILE_WIDTH - gateCollisionDistance) * 2.0;
-              // Then reverse it again, because if we are leaving a T, we are
-              // travelling in the negative direction, so the point on the
-              // curve we want to bonk at is inverted
-              newProgress = clamp(TILE_WIDTH - progressToSnapTo, 0, 1);
-            } else {
-              // Otherwise, take the entrance to the gate, and go back the
-              // collision distance, to determine snap position. Negate it if
-              // going negative direction.
-              const snappedDistance = entranceToGate - gateCollisionDistance;
-              newProgress = clamp(
-                s.playerMomentum < 0
-                  ? TILE_WIDTH - snappedDistance
-                  : snappedDistance,
-                0,
-                1,
-              );
-            }
-
-            const newPoint = currentCurve.getPointAt(newProgress);
-            setMomentum(0);
-            s.setBonkBackTo({
-              nextDirection: s.playerMomentum < 0 ? 1 : -1,
-              lastExit: ef.toArray(),
-            });
-            point = newPoint;
-            marbleRef.current!.position.copy(point);
-            progress = newProgress;
-            setCurveProgress(newProgress);
-          }
-        });
-
-      // Check for switch presses
-      level.tiles
-        .filter((t): t is ButtonTile => t.type === 'button')
-        .forEach((button) => {
-          const isNear =
-            point.distanceTo(new Vector3(...button.position)) < 0.5;
-          const on = s.booleanSwitches[button.id];
-          const enabled =
-            s.enabledBooleanSwitchesFor[-1]?.[button.id] !== false;
-          const { actions } = button;
-
-          // Rolling over action triggers each time, and rolling away resets
-          // the button itself (independent of the action)
-          if (button.actionType === 'click') {
-            if (enabled && isNear) {
-              playBtnSfx();
-              s.setEnabledBooleanSwitchesFor(-1, button.id, false);
-
-              actions.forEach((action) => {
-                if (action.type === 'gate') {
-                  playGadget2Sfx();
-                } else if (action.type == 'rotation') {
-                  playGadget1Sfx();
-                } else if (action.type === 'translation') {
-                  playSlidingSfx();
-                }
-                s.applyAction(currentTile, action);
-              });
-            } else if (!enabled && !isNear) {
-              s.setEnabledBooleanSwitchesFor(-1, button.id, true);
-            }
-            // Roling over the button triggers the action each time, and the button
-            // state stays in this state until hit again, independent of the action
-          } else if (button.actionType === 'toggle') {
-            if (enabled && isNear) {
-              playBtnSfx();
-              s.setEnabledBooleanSwitchesFor(-1, button.id, false);
-              s.setBooleanSwitch(button.id, !on);
-
-              if (!on) {
-                actions.forEach((action) => {
-                  if (action.type === 'gate') {
-                    playGadget2Sfx();
-                  } else if (action.type == 'rotation') {
-                    playGadget1Sfx();
-                  }
-                  s.applyAction(currentTile, action);
-                });
-              } else {
-                actions.forEach((action) => {
-                  if (action.type === 'gate') {
-                    playGadget2Sfx();
-                  } else if (action.type == 'rotation') {
-                    playGadget1Sfx();
-                  } else if (action.type === 'translation') {
-                    playSlidingSfx();
-                  }
-                  s.clearAction(currentTile, action);
-                });
-              }
-            } else if (!enabled && !isNear) {
-              s.setEnabledBooleanSwitchesFor(-1, button.id, true);
-            }
-            // Need to stay over
-          } else if (button.actionType === 'hold') {
-            if (enabled && isNear) {
-              playBtnSfx();
-              s.setEnabledBooleanSwitchesFor(-1, button.id, false);
-              s.setBooleanSwitch(button.id, !on);
-              actions.forEach((action) => {
-                if (action.type === 'gate') {
-                  playGadget2Sfx();
-                } else if (action.type == 'rotation') {
-                  playGadget1Sfx();
-                } else if (action.type === 'translation') {
-                  playSlidingSfx();
-                }
-                s.applyAction(currentTile, action);
-              });
-            }
-            if (!enabled && !isNear) {
-              playBtnSfx();
-              s.setEnabledBooleanSwitchesFor(-1, button.id, true);
-              s.setBooleanSwitch(button.id, !on);
-
-              actions.forEach((action) => {
-                if (action.type === 'gate') {
-                  playGadget2Sfx();
-                } else if (action.type == 'rotation') {
-                  playGadget1Sfx();
-                } else if (action.type === 'translation') {
-                  playSlidingSfx();
-                }
-                s.clearAction(currentTile, action);
-              });
-            }
-          }
-        });
-
-      const isDown = key().down && directions.down && !s.victory;
-      const isLeft = key().left && directions.left && !s.victory;
-      const isRight = key().right && directions.right && !s.victory;
-      const isUp = key().up && directions.up && !s.victory;
-      const isValidUserChoosenDirection = isDown || isLeft || isRight || isUp;
-
-      if (s.bonkBackTo && isValidUserChoosenDirection) {
-        setMomentum(s.bonkBackTo.nextDirection * PLAYER_SPEED);
-        s.clearBonkBackTo();
-      }
-
-      // If we're on a tile and stopped - like if the game starts on a straight
-      // away, let the user move out of it. Buuuut how do we choose the movement
-      // direction?
-      if (
-        !s.bonkBackTo &&
-        s.playerMomentum === 0 &&
-        isValidUserChoosenDirection
-      ) {
-        setMomentum(isUp || isLeft ? PLAYER_SPEED : -PLAYER_SPEED);
-      }
-
-      let nextTile: TrackTile | undefined;
-      let nextIdx: number | null | undefined;
-      let nextId: string | null | undefined;
-      let nextEntrance: number | null | undefined;
-
-      // We are the end of this curve in our direction of travel
-      if ((progress >= 1.0 && isPositive) || (progress <= 0 && !isPositive)) {
-        // We have landed on the junction in the middle of the T
-        if (currentTile.type === 'cap') {
-          // We are leaving
-          if (s.nextConnection === 0) {
-            nextId = currentTile.connections[0];
-            nextEntrance = currentTile.entrances[0];
-            // We hit the center of the cap
-          } else if (isValidUserChoosenDirection) {
-            setEnteredFrom(-1);
-            setNextConnection(0);
-            setMomentum(-PLAYER_SPEED);
-            setCurveProgress(1.0);
-          } else if (s.playerMomentum !== 0) {
-            setMomentum(0);
-            playMetalHitSfx();
-            playMetalHit2Sfx();
-          }
-        } else if (currentTile.type == 't') {
-          // We are going towards, and have landed on, the center
-          if (s.nextConnection === -1) {
-            let nextConnection: number | undefined;
-            if (isValidUserChoosenDirection) {
-              nextConnection = isDown
-                ? directions.down.entrance
-                : isLeft
-                  ? directions.left.entrance
-                  : isRight
-                    ? directions.right.entrance
-                    : directions.up.entrance;
-            }
-
-            // auto continue through
-            // const noKey = !isDown && !isLeft && !isRight && !isUp;
-            // const autoLeft = enteredFrom === 2 && noKey;
-            // const autoRight = enteredFrom === 0 && noKey;
-            // if (autoLeft || autoRight) {
-            //   nextConnection = autoLeft ? 0 : 1;
-            // }
-
-            if (nextConnection !== undefined) {
-              // Start from the T junction
-              setEnteredFrom(-1);
-
-              setNextConnection(nextConnection);
-              // We are moving out from T so negative momentum
-              setMomentum(-PLAYER_SPEED);
-              setCurrentCurveIndex(nextConnection);
-              // Start at the far end of the curve!
-              setCurveProgress(1.0);
-              // We are at the t junction, we came from the bottom, and no keys
-              // were pressed, so stop!
-            } else if (s.playerMomentum !== 0) {
-              if (s.enteredFrom === 1) {
-                playMetalHitSfx();
-                playMetalHit2Sfx();
-              }
-              setMomentum(0);
-            }
-            // We are getting the hell out of here
-          } else if (s.enteredFrom === -1) {
-            nextId = currentTile.connections[s.nextConnection!];
-            nextEntrance = currentTile.entrances[s.nextConnection!];
-
-            if (!nextId || nextEntrance === undefined) {
-              playSpringboardSfx();
-              setMomentum(s.playerMomentum > 0 ? -PLAYER_SPEED : PLAYER_SPEED);
-              setEnteredFrom(s.nextConnection!);
-              setNextConnection(-1);
-              // Another an option
-              // s.resetLevel();
-            }
-          }
-        } else {
-          // We're on a straightaway
-
-          // Positive momentum means we choose this tile's last exit
-          nextIdx = isPositive ? 1 : 0;
-          nextId = currentTile.connections[nextIdx];
-          nextEntrance = currentTile.entrances[nextIdx];
-
-          if (!nextId || nextEntrance === undefined) {
-            playSpringboardSfx();
-            setMomentum(s.playerMomentum > 0 ? -PLAYER_SPEED : PLAYER_SPEED);
-            setEnteredFrom(s.nextConnection!);
-            setNextConnection(s.nextConnection === 0 ? 1 : 0);
-          }
-        }
-
-        // If we detected there is somewhere to go...
-        if (nextId !== undefined || nextEntrance !== undefined) {
-          if (nextId === null || nextEntrance == null) {
-            throw new Error('wtf?');
-            return;
-          } else {
-            nextTile = level.tiles.find(
-              (tile): tile is TrackTile => tile.id === nextId,
-            )!;
-          }
-
-          if (!nextTile) {
-            console.error('bad next tile', { currentTile, level });
-            throw new Error('bad next tile');
-          }
-
-          setCurrentTileId(nextTile.id);
-
-          // If connecting to a striaght tile
-          if (isRailTile(nextTile)) {
-            setCurrentCurveIndex(0);
-            setEnteredFrom(nextEntrance);
-            // Go towards other connection
-            setNextConnection(nextEntrance === 0 ? 1 : 0);
-            // If we entered from direction of travel, go positive. Otherwise go negative
-            setMomentum(nextEntrance === 0 ? PLAYER_SPEED : -PLAYER_SPEED);
-            setCurveProgress(nextEntrance === 0 ? 0 : 1);
-            // If connecting to a T junction
-          } else if (nextTile.type === 't') {
-            setCurrentCurveIndex(nextEntrance);
-            setEnteredFrom(nextEntrance);
-            // We are entering a choice tile - the next connection is t center
-            setNextConnection(-1);
-            // All T junction tile curves point inward so go positive
-            setMomentum(PLAYER_SPEED);
-            setCurveProgress(0);
-          }
-        }
-      }
-
-      const coins = level.tiles.filter((t) => t.type === 'coin');
-      if (
-        coins.length &&
-        coins.filter((t) => !s.collectedItems.has(t.id)).length === 0 &&
-        !s.victory
-      ) {
-        // playSuccessSfx();
-        playArcadeWinSfx();
-        setVictory(true);
-      }
+    const coins = level.tiles.filter((t) => t.type === 'coin');
+    if (
+      coins.length &&
+      coins.filter((t) => !s.collectedItems.has(t.id)).length === 0 &&
+      !s.victory
+    ) {
+      // playSuccessSfx();
+      playArcadeWinSfx();
+      setVictory(true);
     }
   });
 
@@ -692,16 +893,7 @@ const Game = () => {
       />
 
       <group ref={gameObjectsRef}>
-        {/* Player */}
-        <mesh ref={marbleRef} castShadow>
-          <sphereGeometry args={[SPHERE_RADIUS, 128, 128]} />
-          <meshStandardMaterial
-            metalness={0.4}
-            roughness={0.01}
-            envMapIntensity={0.5}
-            emissive={0x333333}
-          />
-        </mesh>
+        <Player />
 
         {debugPoints.map((point, i) => (
           <mesh key={i} position={point.position}>
@@ -774,6 +966,8 @@ const Game = () => {
                 );
               } else if (tile.type === 'gate') {
                 return <Gate key={tile.id} tile={tile} />;
+              } else if (tile.type === 'friend') {
+                return <Friend key={tile.id} tile={tile} />;
               }
             })}
 
@@ -868,7 +1062,6 @@ const Game = () => {
 };
 
 export default function ThreeScene({ dbLevels }: GameProps) {
-  const playerMomentum = useGameStore((state) => state.playerMomentum);
   // const curveProgress = useStore((state) => state.curveProgress);
   const isEditing = useGameStore((state) => state.isEditing);
   const debug = useGameStore((state) => state.debug);
@@ -987,12 +1180,6 @@ export default function ThreeScene({ dbLevels }: GameProps) {
           >
             <Game />
           </Canvas>
-          {debug && (
-            <div className="absolute bottom-0 right-0 h-16 w-64 z-2 bg-slate-900 shadow-lg rounded-lg p-2 text-sm">
-              <div>momentum: {playerMomentum}</div>
-              {/* <div>curve progress: {Math.round(curveProgress * 10) / 10}</div> */}
-            </div>
-          )}
         </EditorUI>
       </KeyboardControls>
     </div>

@@ -1,10 +1,10 @@
 'use client';
 
 import { Html } from '@react-three/drei';
-import { useEffect, useMemo } from 'react';
+import { useLayoutEffect, useMemo } from 'react';
 import cx from 'classnames';
 
-import { TrackTile, useGameStore } from '@/store/gameStore';
+import { PLAYER_ID, TrackTile, useGameStore } from '@/store/gameStore';
 import { useRefMap } from '@/util/react';
 
 import styles from './styles.module.css';
@@ -26,7 +26,9 @@ const OnScreenArrows = () => {
   const level = useGameStore((state) =>
     state.levels.find((l) => l.id === state.currentLevelId),
   );
-  const currentTileId = useGameStore((state) => state.currentTileId);
+  const currentTileId = useGameStore(
+    (state) => state.semiDynamicObjects[PLAYER_ID].currentTileId,
+  );
   const tilesComputed = useGameStore((state) => state.tilesComputed);
   const [arrowRefs, setArrowRef] = useRefMap<Group>();
   const [htmlRefs, setHtmlRefs] = useRefMap<HTMLDivElement>();
@@ -57,7 +59,7 @@ const OnScreenArrows = () => {
     [tilesComputed, currentTile, bonkBackTo],
   );
 
-  useEffect(
+  useLayoutEffect(
     () =>
       // These need to update every frame, but we can't set state per frame,
       // nor do we want this component to render every frame, so subscribe to
@@ -74,7 +76,11 @@ const OnScreenArrows = () => {
           if (!htmlRef) {
             return;
           }
-          if (screenData && state.playerMomentum === 0 && !state.victory) {
+          if (
+            screenData &&
+            state.semiDynamicObjects[PLAYER_ID].momentum === 0 &&
+            !state.victory
+          ) {
             htmlRef.style.display = 'block';
             arrowRef?.position?.copy(screenData.position);
             if (htmlRef) {

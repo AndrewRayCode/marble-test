@@ -212,6 +212,19 @@ export const EditorUI = ({
             >
               <div>Gate</div>
             </div>
+            <div
+              className={cx(styles.toolbarButton, {
+                [styles.selected]: createType === 'friend',
+              })}
+              key="frd"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                setCreateType('friend');
+              }}
+            >
+              <div>Friend</div>
+            </div>
           </div>
         )}
       </div>

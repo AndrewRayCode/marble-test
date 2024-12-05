@@ -22,12 +22,14 @@ import {
   GateTile,
   SphereTile,
   GroupTile,
+  FriendTile,
+  Tile,
 } from '@/store/gameStore';
 
 import { useKeyPress, useRefMap } from '@/util/react';
 import { DoubleSide, Euler, Group as ThreeGroup, Vector3 } from 'three';
 
-import { TILE_HALF_WIDTH } from '@/game/constants';
+import { PLAYER_SPEED, TILE_HALF_WIDTH } from '@/game/constants';
 import Straightaway from '../Tiles/Straightaway';
 import QuarterTurn from '../Tiles/QuarterTurn';
 import Junction from '../Tiles/Junction';
@@ -38,6 +40,7 @@ import Coin from '../Tiles/Coin';
 import Gate from '../Tiles/Gate';
 import Sphere from '../Tiles/Sphere';
 import Group from '../Tiles/Group';
+import Friend from '../Tiles/Friend';
 
 type EditorProps = {
   setOrbitEnabled: (enabled: boolean) => void;
@@ -61,92 +64,108 @@ const wtfRotations: Triple[] = [
   [0, Math.PI / 2, 0],
 ];
 
-const defaultStraightTile: RailTile = {
-  id: `editor_cursor_${makeId()}`,
-  position: [0, 0, 0],
-  rotation: [0, 0, 0],
-  type: 'straight',
-  parentId: null,
-  showSides: 'all' as Side,
-  connections: [null, null],
-  entrances: [null, null],
-};
-const defaultQuarterTile: RailTile = {
-  id: `editor_cursor_${makeId()}`,
-  position: [0, 0, 0],
-  rotation: [0, 0, 0],
-  type: 'quarter',
-  parentId: null,
-  showSides: 'all' as Side,
-  connections: [null, null],
-  entrances: [null, null],
-};
-const defaultJunctionTile: JunctionTile = {
-  id: `editor_cursor_${makeId()}`,
-  position: [0, 0, 0],
-  rotation: [0, 0, 0],
-  type: 't',
-  parentId: null,
-  showSides: 'all' as Side,
-  connections: [null, null, null],
-  entrances: [null, null, null],
-};
-const defaultButtonTile: ButtonTile = {
-  id: `editor_cursor_${makeId()}`,
-  position: [0, 0, 0],
-  rotation: [0, 0, 0],
-  type: 'button',
-  parentId: null,
-  actionType: 'toggle',
-  actions: [],
-};
-const defaultCapTile: CapTile = {
-  id: `editor_cursor_${makeId()}`,
-  position: [0, 0, 0],
-  rotation: [0, 0, 0],
-  type: 'cap',
-  parentId: null,
-  showSides: 'all' as Side,
-  connections: [null],
-  entrances: [null],
-};
-const defaultBoxTile: BoxTile = {
-  id: `editor_cursor_${makeId()}`,
-  position: [0, 0, 0],
-  rotation: [0, 0, 0],
-  type: 'box',
-  parentId: null,
-  color: '#ffffff',
-};
-const defaultSphereTile: SphereTile = {
-  id: `editor_cursor_${makeId()}`,
-  position: [0, 0, 0],
-  rotation: [0, 0, 0],
-  type: 'sphere',
-  parentId: null,
-  color: '#ffffff',
-};
-const defaultCoinTile: CoinTile = {
-  id: `editor_cursor_${makeId()}`,
-  position: [0, 0, 0],
-  rotation: [0, 0, 0],
-  type: 'coin',
-  parentId: null,
-};
-const defaultGateTile: GateTile = {
-  id: `editor_cursor_${makeId()}`,
-  position: [0, 0, 0],
-  rotation: [0, 0, 0],
-  type: 'gate',
-  parentId: null,
-  defaultState: 'closed',
-};
-const defaultGroupTile: GroupTile = {
-  id: `editor_cursor_${makeId()}`,
-  position: [0, 0, 0],
-  rotation: [0, 0, 0],
-  type: 'group',
-  parentId: null,
+const defaultTiles: { [K in Tile['type']]: Extract<Tile, { type: K }> } = {
+  straight: {
+    id: `editor_cursor_${makeId()}`,
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+    parentId: null,
+    type: 'straight',
+    showSides: 'all' as Side,
+    connections: [null, null],
+    entrances: [null, null],
+  } as Extract<Tile, { type: 'straight' }>,
+  quarter: {
+    id: `editor_cursor_${makeId()}`,
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+    type: 'quarter',
+    parentId: null,
+    showSides: 'all' as Side,
+    connections: [null, null],
+    entrances: [null, null],
+  } as Extract<Tile, { type: 'quarter' }>,
+  t: {
+    id: `editor_cursor_${makeId()}`,
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+    type: 't',
+    parentId: null,
+    showSides: 'all' as Side,
+    connections: [null, null, null],
+    entrances: [null, null, null],
+  },
+  button: {
+    id: `editor_cursor_${makeId()}`,
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+    type: 'button',
+    parentId: null,
+    actionType: 'toggle',
+    actions: [],
+  },
+  cap: {
+    id: `editor_cursor_${makeId()}`,
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+    type: 'cap',
+    parentId: null,
+    showSides: 'all' as Side,
+    connections: [null],
+    entrances: [null],
+  },
+  box: {
+    id: `editor_cursor_${makeId()}`,
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+    type: 'box',
+    parentId: null,
+    color: '#ffffff',
+  },
+  sphere: {
+    id: `editor_cursor_${makeId()}`,
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+    type: 'sphere',
+    parentId: null,
+    color: '#ffffff',
+  },
+  coin: {
+    id: `editor_cursor_${makeId()}`,
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+    type: 'coin',
+    parentId: null,
+  },
+  gate: {
+    id: `editor_cursor_${makeId()}`,
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+    type: 'gate',
+    parentId: null,
+    defaultState: 'closed',
+  },
+  group: {
+    id: `editor_cursor_${makeId()}`,
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+    type: 'group',
+    parentId: null,
+  },
+  friend: {
+    id: `editor_cursor_${makeId()}`,
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+    type: 'friend',
+    parentId: null,
+    color: '#000000',
+    startingTileId: null,
+    directionBehavior: 'random',
+    hitBehavior: 'bounce',
+    deadEndBehavior: 'bounce',
+    speed: '' + PLAYER_SPEED,
+    startingDirection: 1,
+  },
 };
 
 const TransformMemoized = memo(
@@ -355,73 +374,13 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
         <group position={cursorSnappedPosition} rotation={cursorRotation}>
           <mesh
             onClick={(e) => {
-              const base: TileBase = {
+              addTile({
+                ...defaultTiles[createType],
                 id: makeId(),
                 position: cursorSnappedPosition,
                 rotation: cursorRotation,
-                type: '',
                 parentId: null,
-              };
-              if (createType === 'straight' || createType === 'quarter') {
-                addTile({
-                  ...base,
-                  type: createType,
-                  showSides: 'all' as Side,
-                  connections: [null, null],
-                  entrances: [null, null],
-                });
-              } else if (createType === 't') {
-                addTile({
-                  ...base,
-                  type: createType,
-                  showSides: 'all' as Side,
-                  connections: [null, null, null],
-                  entrances: [null, null, null],
-                });
-              } else if (createType === 'button') {
-                addTile({
-                  ...base,
-                  type: createType,
-                  actionType: 'toggle',
-                  actions: [],
-                });
-              } else if (createType === 'cap') {
-                addTile({
-                  ...base,
-                  type: createType,
-                  showSides: 'all' as Side,
-                  connections: [null],
-                  entrances: [null],
-                });
-              } else if (createType === 'box') {
-                addTile({
-                  ...base,
-                  type: createType,
-                  color: '#ffffff',
-                });
-              } else if (createType === 'group') {
-                addTile({
-                  ...base,
-                  type: createType,
-                });
-              } else if (createType === 'sphere') {
-                addTile({
-                  ...base,
-                  type: createType,
-                  color: '#ffffff',
-                });
-              } else if (createType === 'coin') {
-                addTile({
-                  ...base,
-                  type: createType,
-                });
-              } else if (createType === 'gate') {
-                addTile({
-                  ...base,
-                  type: createType,
-                  defaultState: 'open',
-                });
-              }
+              });
               autoSnap();
             }}
           >
@@ -429,25 +388,27 @@ const Editor = ({ setOrbitEnabled }: EditorProps) => {
             <meshBasicMaterial color={'red'} wireframe />
           </mesh>
           {createType === 'straight' ? (
-            <Straightaway tile={defaultStraightTile} opacity={0.25} />
+            <Straightaway tile={defaultTiles.straight} opacity={0.25} />
           ) : createType === 'quarter' ? (
-            <QuarterTurn tile={defaultQuarterTile} opacity={0.25} />
+            <QuarterTurn tile={defaultTiles.quarter} opacity={0.25} />
           ) : createType === 't' ? (
-            <Junction tile={defaultJunctionTile} opacity={0.25} />
+            <Junction tile={defaultTiles.t} opacity={0.25} />
           ) : createType === 'button' ? (
-            <Toggle tile={defaultButtonTile} opacity={0.25} />
+            <Toggle tile={defaultTiles.button} opacity={0.25} />
           ) : createType === 'cap' ? (
-            <Cap tile={defaultCapTile} opacity={0.25} />
+            <Cap tile={defaultTiles.cap} opacity={0.25} />
           ) : createType === 'box' ? (
-            <Box tile={defaultBoxTile} opacity={0.25} />
+            <Box tile={defaultTiles.box} opacity={0.25} />
           ) : createType === 'sphere' ? (
-            <Sphere tile={defaultSphereTile} opacity={0.25} />
+            <Sphere tile={defaultTiles.sphere} opacity={0.25} />
           ) : createType === 'coin' ? (
-            <Coin tile={defaultCoinTile} opacity={0.25} />
+            <Coin tile={defaultTiles.coin} opacity={0.25} />
           ) : createType === 'gate' ? (
-            <Gate tile={defaultGateTile} opacity={0.25} />
+            <Gate tile={defaultTiles.gate} opacity={0.25} />
           ) : createType === 'group' ? (
-            <Group tile={defaultGroupTile} opacity={0.25} />
+            <Group tile={defaultTiles.group} opacity={0.25} />
+          ) : createType === 'friend' ? (
+            <Friend tile={defaultTiles.friend} opacity={0.25} />
           ) : null}
         </group>
       )}
