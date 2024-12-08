@@ -130,29 +130,29 @@ const findCollisions = (
   return collisions;
 };
 
-const tilePercentToWorldDistance = (tile: Tile, percent: number) => {
-  if (tile.type === 'cap') {
-    return (1 / INTO_CAP) * percent;
-  }
-  if (tile.type === 'quarter') {
-    return 0.5 * Math.PI * percent;
-  }
-  if (tile.type === 't') {
-    return percent * 2;
-  }
-  return percent;
-};
 const worldDistanceToTilePercent = (tile: Tile, distance: number) => {
   if (tile.type === 'cap') {
-    return INTO_CAP * distance;
+    return (1 / INTO_CAP) * distance;
   }
   if (tile.type === 'quarter') {
-    return distance / (0.5 * Math.PI);
+    return 0.5 * Math.PI * distance;
   }
   if (tile.type === 't') {
-    return distance / 2;
+    return distance * 2;
   }
   return distance;
+};
+const tilePercentToWorldDistance = (tile: Tile, percent: number) => {
+  if (tile.type === 'cap') {
+    return INTO_CAP * percent;
+  }
+  if (tile.type === 'quarter') {
+    return percent / (0.5 * Math.PI);
+  }
+  if (tile.type === 't') {
+    return percent / 2;
+  }
+  return percent;
 };
 
 const snepPep = (
@@ -169,42 +169,93 @@ const snepPep = (
 ) => {
   const aPosV = new Vector3(...aPosition);
   const bPosV = new Vector3(...bPosition);
+  const snapDistance = aRadius + bRadius;
 
-  let bDirection = 0;
-  if (bCurvePercent === 1) {
-    const nextBPosition = bCurve.getPointAt(Math.max(bCurvePercent - 0.01, 1));
-    bDirection =
-      nextBPosition.distanceTo(aPosV) > bPosV.distanceTo(aPosV) ? -1 : 1;
+  let bTowardsA = 0;
+  if (bCurvePercent >= 0.99) {
+    const lowerBPosition = bCurve.getPointAt(Math.max(bCurvePercent - 0.01, 0));
+    bTowardsA =
+      // If lower position is closer, go negative towards A
+      lowerBPosition.distanceTo(aPosV) < bPosV.distanceTo(aPosV) ? -1 : 1;
   } else {
-    const nextBPosition = bCurve.getPointAt(Math.max(bCurvePercent + 0.01, 1));
-    bDirection =
-      nextBPosition.distanceTo(aPosV) < bPosV.distanceTo(aPosV) ? -1 : 1;
+    const higherBPosition = bCurve.getPointAt(
+      Math.min(bCurvePercent + 0.01, 1),
+    );
+    bTowardsA =
+      // If higher position is closer, go positive towards A
+      higherBPosition.distanceTo(aPosV) < bPosV.distanceTo(aPosV) ? 1 : -1;
   }
 
+  // If we're on the same tile...
+  if (aTile.id === bTile.id) {
+    // Then snap to the distance between A and B, in curve space
+    const percentToSnapBack = worldDistanceToTilePercent(aTile, snapDistance);
+    // This can intentionally be lower than 0 and higher than 1! In that case
+    // the snapped position is off the curve, and the consumer needs to move A
+    // to the right tile
+    return bCurvePercent + bTowardsA * percentToSnapBack;
+  }
+
+  // If A and B are on different tiles, we need to get the math done for tile
+  // A's curve space
+
+  // If going down in percent is closer to A, aka if bTowardsA is negative, then
+  // "towards A" is towards 0% on B's tile, so we simply take how far along B
+  // already. Othewrise, it's the other direction, aka the reamining percent on
+  // the tile, aka 1 - bCurvePercent
+  const bPercentLeftOnThisTileTowardsA =
+    bTowardsA < 0 ? bCurvePercent : 1 - bCurvePercent;
   const bCurveSpatial = tilePercentToWorldDistance(
     bTile,
-    bDirection < 0 ? 1.0 - bCurvePercent : bCurvePercent,
+    bPercentLeftOnThisTileTowardsA,
   );
 
-  const remainingSpatialDistanceAlongCurveA = aRadius + bRadius - bCurveSpatial;
+  const remainingSpatialDistanceAlongCurveA = snapDistance - bCurveSpatial;
   const remainingAPercent = worldDistanceToTilePercent(
     aTile,
     remainingSpatialDistanceAlongCurveA,
   );
 
-  let aDirection = 0;
-  if (aCurvePercent === 1) {
-    const nextAPosition = aCurve.getPointAt(Math.max(aCurvePercent - 0.01, 1));
-    aDirection =
-      nextAPosition.distanceTo(aPosV) > bPosV.distanceTo(aPosV) ? -1 : 1;
+  let aTowardsB = 0;
+  if (aCurvePercent >= 0.99) {
+    const lowerAPosition = aCurve.getPointAt(Math.max(aCurvePercent - 0.01, 0));
+    aTowardsB =
+      // If lower position is closer, go negative towards B
+      lowerAPosition.distanceTo(bPosV) < aPosV.distanceTo(bPosV) ? -1 : 1;
   } else {
-    const nextAPosition = aCurve.getPointAt(Math.max(aCurvePercent + 0.01, 1));
-    aDirection =
-      nextAPosition.distanceTo(aPosV) < bPosV.distanceTo(aPosV) ? -1 : 1;
+    const higherAPosition = aCurve.getPointAt(
+      Math.min(aCurvePercent + 0.01, 1),
+    );
+    aTowardsB =
+      // If higher position is closer, go positive towards B
+      higherAPosition.distanceTo(bPosV) < aPosV.distanceTo(aPosV) ? 1 : -1;
   }
 
+  // if (hasPaused) {
+  console.log({
+    aTile: aTile,
+    bTile: bTile,
+    snapDistance,
+    aCurvePercent,
+    bCurvePercent,
+    aTowardsB,
+    bTowardsA,
+    remainingSpatialDistanceAlongCurveA,
+    remainingAPercent,
+  });
+  // }
+
   return clamp(
-    aDirection < 1 ? 1.0 - remainingAPercent : remainingAPercent,
+    // If this is right, I can't figure out why it's right! Let's say A is
+    // travelling from left to right, and it came from 1, and it's going to 0.
+    // And B is further right. A towards B is negative, because it's going to
+    // zero. So we want to snap to the position of the curve towards B, which is
+    // 0, and then add in the remaining A percent.
+    //
+    // But the below is basically the opposite logic - if a towards B is
+    // negative, it returns the negation... which works in the one example I'm
+    // testing with. I hope the truth reveals itself.
+    aTowardsB < 0 ? 1.0 - remainingAPercent : remainingAPercent,
     0,
     1,
   );
@@ -606,98 +657,106 @@ const stepGameObject = (
           const isGoingTowards =
             nextPoint.distanceTo(new Vector3(...otherPos)) <
             point.distanceTo(new Vector3(...otherPos));
-          if (
-            isGoingTowards &&
-            other.hitBehavior === 'stop' &&
-            momentum !== 0
-          ) {
-            const [ef, newProgress] = snapProgress(
-              PLAYER_ID,
-              s,
-              momentum,
-              currentTile,
-              enteredFrom,
-              otherPos,
-              SPHERE_RADIUS * 2,
-            );
+          // if (
+          //   isGoingTowards &&
+          //   other.hitBehavior === 'stop' &&
+          //   momentum !== 0
+          // ) {
+          // const [ef, newProgress] = snapProgress(
+          //   PLAYER_ID,
+          //   s,
+          //   momentum,
+          //   currentTile,
+          //   enteredFrom,
+          //   otherPos,
+          //   SPHERE_RADIUS * 2,
+          // );
 
-            const neProgress = snepPep(
-              point.toArray(),
-              progress,
-              currentTile,
-              currentCurve,
-              SPHERE_RADIUS,
-              otherPos,
-              s.dynamicObjects[other.id].curveProgress,
-              other,
-              s.tilesComputed[other.currentTileId]?.curves[0],
-              SPHERE_RADIUS,
-            );
-            // TODO: use the output of snepPep()
+          const otherSemiDynamic = s.semiDynamicObjects[other.id];
+          const otherDynamic = s.dynamicObjects[other.id];
+          const otherTile = level.tiles.find(
+            (t) => t.id === otherSemiDynamic.currentTileId,
+          );
 
+          const newProgress = snepPep(
+            point.toArray(),
+            progress,
+            currentTile,
+            currentCurve,
+            SPHERE_RADIUS,
+            otherPos,
+            otherDynamic.curveProgress,
+            otherTile!,
+            s.tilesComputed[otherSemiDynamic.currentTileId!]?.curves[
+              otherSemiDynamic.currentCurveIndex
+            ],
+            SPHERE_RADIUS,
+          );
+          // TODO: use the output of snepPep()
+
+          if (hasPaused) {
             console.log('player snap from', { curveProgress }, 'to', {
               newProgress,
             });
-            const newPoint = currentCurve.getPointAt(newProgress);
-            s.setMomentum(objectId, 0);
-            point = newPoint;
-            s.setPosition(objectId, point.toArray());
-            progress = newProgress;
-
-            s.setBonkBackTo({
-              nextDirection: momentum < 0 ? 1 : -1,
-              lastExit: ef.toArray(),
-            });
-
-            s.setCurveProgress(objectId, newProgress);
-
-            playSfx['metalHit']();
-            playSfx['metalHit2']();
-          } else if (isGoingTowards && other.hitBehavior === 'bounce') {
-            s.setMomentum(
-              objectId,
-              momentum > 0 ? -OBJECT_SPEED : OBJECT_SPEED,
-            );
-            s.setEnteredFrom(objectId, nextConnection!);
-            s.setNextConnection(objectId, enteredFrom);
           }
+          const newPoint = currentCurve.getPointAt(newProgress);
+          s.setMomentum(objectId, 0);
+          point = newPoint;
+          s.setPosition(objectId, point.toArray());
+          progress = newProgress;
+
+          // s.setBonkBackTo({
+          //   nextDirection: momentum < 0 ? 1 : -1,
+          //   lastExit: ef.toArray(),
+          // });
+
+          s.setCurveProgress(objectId, newProgress);
+
+          // playSfx['metalHit']();
+          // playSfx['metalHit2']();
+          // } else if (isGoingTowards && other.hitBehavior === 'bounce') {
+          //   s.setMomentum(
+          //     objectId,
+          //     momentum > 0 ? -OBJECT_SPEED : OBJECT_SPEED,
+          //   );
+          //   s.setEnteredFrom(objectId, nextConnection!);
+          //   s.setNextConnection(objectId, enteredFrom);
+          // }
         }
         // Handle other object collision
       } else if (currentObject?.type === 'friend') {
-        const otherPos = s.dynamicObjects[PLAYER_ID].position;
-        const isGoingTowards =
-          nextPoint.distanceTo(new Vector3(...otherPos)) <
-          point.distanceTo(new Vector3(...otherPos));
-        if (isGoingTowards) {
-          playSfx['metalHit']();
-          playSfx['metalHit2']();
-          if (currentObject.hitBehavior === 'stop' && momentum !== 0) {
-            const [_, newProgress] = snapProgress(
-              currentObject.id,
-              s,
-              momentum,
-              currentTile,
-              enteredFrom,
-              otherPos,
-              SPHERE_RADIUS * 2,
-            );
-
-            const newPoint = currentCurve.getPointAt(newProgress);
-            s.setMomentum(objectId, 0);
-            point = newPoint;
-            s.setPosition(objectId, point.toArray());
-            progress = newProgress;
-
-            s.setCurveProgress(objectId, newProgress);
-          } else if (currentObject.hitBehavior === 'bounce') {
-            s.setMomentum(
-              objectId,
-              momentum > 0 ? -OBJECT_SPEED : OBJECT_SPEED,
-            );
-            s.setEnteredFrom(objectId, nextConnection!);
-            s.setNextConnection(objectId, enteredFrom);
-          }
-        }
+        // const otherPos = s.dynamicObjects[PLAYER_ID].position;
+        // const isGoingTowards =
+        //   nextPoint.distanceTo(new Vector3(...otherPos)) <
+        //   point.distanceTo(new Vector3(...otherPos));
+        // if (isGoingTowards) {
+        //   playSfx['metalHit']();
+        //   playSfx['metalHit2']();
+        //   if (currentObject.hitBehavior === 'stop' && momentum !== 0) {
+        //     const [_, newProgress] = snapProgress(
+        //       currentObject.id,
+        //       s,
+        //       momentum,
+        //       currentTile,
+        //       enteredFrom,
+        //       otherPos,
+        //       SPHERE_RADIUS * 2,
+        //     );
+        //     const newPoint = currentCurve.getPointAt(newProgress);
+        //     s.setMomentum(objectId, 0);
+        //     point = newPoint;
+        //     s.setPosition(objectId, point.toArray());
+        //     progress = newProgress;
+        //     s.setCurveProgress(objectId, newProgress);
+        //   } else if (currentObject.hitBehavior === 'bounce') {
+        //     s.setMomentum(
+        //       objectId,
+        //       momentum > 0 ? -OBJECT_SPEED : OBJECT_SPEED,
+        //     );
+        //     s.setEnteredFrom(objectId, nextConnection!);
+        //     s.setNextConnection(objectId, enteredFrom);
+        //   }
+        // }
       }
     }
 
@@ -893,6 +952,8 @@ const stepGameObject = (
   }
 };
 
+let hasPaused = false;
+
 const Game = () => {
   const [, key] = useKeyboardControls();
 
@@ -1056,6 +1117,16 @@ const Game = () => {
 
   useFrame((state, delta) => {
     renderBackground();
+    if (key().p) {
+      hasPaused = !hasPaused;
+      return;
+    }
+    if (hasPaused) {
+      if (!key().s) {
+        return;
+      }
+      delta = 0.01;
+    }
 
     const s = useGameStore.getState();
 
@@ -1350,6 +1421,8 @@ export default function ThreeScene({ dbLevels }: GameProps) {
           { name: 'one', keys: ['1'] },
           { name: 'two', keys: ['2'] },
           { name: 'three', keys: ['3'] },
+          { name: 'p', keys: ['p'] },
+          { name: 's', keys: ['s'] },
           { name: 'j', keys: ['j'] },
           { name: 's', keys: ['s'] },
           { name: 'q', keys: ['q'] },
