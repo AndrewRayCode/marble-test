@@ -193,7 +193,9 @@ const snepPep = (
     // This can intentionally be lower than 0 and higher than 1! In that case
     // the snapped position is off the curve, and the consumer needs to move A
     // to the right tile
-    return bCurvePercent + bTowardsA * percentToSnapBack;
+    const newPercent = bCurvePercent + bTowardsA * percentToSnapBack;
+    // Except on cap tiles - you can't go past the dead end!
+    return aTile.type === 'cap' ? Math.min(1, newPercent) : newPercent;
   }
 
   // If A and B are on different tiles, we need to get the math done for tile
@@ -228,7 +230,7 @@ const snepPep = (
     );
     aTowardsB =
       // If higher position is closer, go positive towards B
-      higherAPosition.distanceTo(bPosV) < aPosV.distanceTo(aPosV) ? 1 : -1;
+      higherAPosition.distanceTo(bPosV) < aPosV.distanceTo(bPosV) ? 1 : -1;
   }
 
   // if (hasPaused) {
@@ -247,7 +249,7 @@ const snepPep = (
 
   return clamp(
     // If this is right, I can't figure out why it's right! Let's say A is
-    // travelling from left to right, and it came from 1, and it's going to 0.
+    // traveling from left to right, and it came from 1, and it's going to 0.
     // And B is further right. A towards B is negative, because it's going to
     // zero. So we want to snap to the position of the curve towards B, which is
     // 0, and then add in the remaining A percent.
@@ -255,7 +257,12 @@ const snepPep = (
     // But the below is basically the opposite logic - if a towards B is
     // negative, it returns the negation... which works in the one example I'm
     // testing with. I hope the truth reveals itself.
-    aTowardsB < 0 ? 1.0 - remainingAPercent : remainingAPercent,
+    // aTowardsB < 0 ? 1.0 - remainingAPercent : remainingAPercent,
+
+    // This is right for moving to a cap tile, where both tiles meet at 0,
+    // Becuase if A is negative going towards B, then 0 is between A and B,
+    // and we want to remove % away from 0.
+    aTowardsB < 0 ? remainingAPercent : 1.0 - remainingAPercent,
     0,
     1,
   );
@@ -438,7 +445,7 @@ const stepGameObject = (
       ? PLAYER_SPEED
       : parseFloat((currentObject as FriendTile)?.speed || '0');
   const { curveProgress } = s.dynamicObjects[objectId];
-  const isPositive = momentum >= 0;
+  let isPositive = momentum >= 0;
 
   // Type safe bail-out for later, like falling out of level
   if (!currentTile) {
@@ -643,12 +650,22 @@ const stepGameObject = (
       s.setMomentum(objectId, isUp || isLeft ? OBJECT_SPEED : -OBJECT_SPEED);
     }
 
+    let nextTile: TrackTile | undefined;
+    let nextIdx: number | null | undefined;
+    let nextId: string | null | undefined;
+    let nextEntrance: number | null | undefined;
+    let nextDistance: number | undefined;
+
     if (collisions[objectId]) {
       const nextPoint = currentCurve.getPointAt(
         clamp(progress + progress * momentum * delta, 0, 1),
       );
       // Handle player collision
       if (objectId === PLAYER_ID) {
+        console.log(
+          'player on this frame collided with ',
+          collisions[objectId],
+        );
         const other = level.tiles.find(
           (t): t is FriendTile => t.id === collisions[objectId],
         );
@@ -692,36 +709,54 @@ const stepGameObject = (
             ],
             SPHERE_RADIUS,
           );
-          // TODO: use the output of snepPep()
-
-          if (hasPaused) {
-            console.log('player snap from', { curveProgress }, 'to', {
+          if (s.isPaused) {
+            console.log('result of snepPep() from', { curveProgress }, 'to', {
               newProgress,
             });
           }
-          const newPoint = currentCurve.getPointAt(newProgress);
-          s.setMomentum(objectId, 0);
-          point = newPoint;
-          s.setPosition(objectId, point.toArray());
-          progress = newProgress;
+          // We stayed on the same tile
+          if (newProgress >= 0 && newProgress <= 1) {
+            // TODO handle case of newprogress being <0 or >1
 
-          // s.setBonkBackTo({
-          //   nextDirection: momentum < 0 ? 1 : -1,
-          //   lastExit: ef.toArray(),
-          // });
+            const newPoint = currentCurve.getPointAt(newProgress);
+            s.setMomentum(objectId, 0);
+            point = newPoint;
+            s.setPosition(objectId, point.toArray());
+            progress = newProgress;
 
-          s.setCurveProgress(objectId, newProgress);
+            // s.setBonkBackTo({
+            //   nextDirection: momentum < 0 ? 1 : -1,
+            //   lastExit: ef.toArray(),
+            // });
 
-          // playSfx['metalHit']();
-          // playSfx['metalHit2']();
-          // } else if (isGoingTowards && other.hitBehavior === 'bounce') {
-          //   s.setMomentum(
-          //     objectId,
-          //     momentum > 0 ? -OBJECT_SPEED : OBJECT_SPEED,
-          //   );
-          //   s.setEnteredFrom(objectId, nextConnection!);
-          //   s.setNextConnection(objectId, enteredFrom);
-          // }
+            s.setCurveProgress(objectId, newProgress);
+
+            // playSfx['metalHit']();
+            // playSfx['metalHit2']();
+            // } else if (isGoingTowards && other.hitBehavior === 'bounce') {
+            //   s.setMomentum(
+            //     objectId,
+            //     momentum > 0 ? -OBJECT_SPEED : OBJECT_SPEED,
+            //   );
+            //   s.setEnteredFrom(objectId, nextConnection!);
+            //   s.setNextConnection(objectId, enteredFrom);
+            // }
+            // We got booted to a new tile...
+          } else {
+            progress = clamp(newProgress, 0, 1);
+            // next progress is the amount into the next tile to go - BUT we
+            // don't know the next tile yet!
+            nextDistance = tilePercentToWorldDistance(
+              currentTile,
+              newProgress < 0 ? Math.abs(newProgress) : newProgress - 1,
+            );
+            console.log('push bumped to new tile!', {
+              newProgress,
+              nextDistance,
+            });
+            // nextProgress = newProgress;
+            isPositive = newProgress > 1;
+          }
         }
         // Handle other object collision
       } else if (currentObject?.type === 'friend') {
@@ -759,11 +794,6 @@ const stepGameObject = (
         // }
       }
     }
-
-    let nextTile: TrackTile | undefined;
-    let nextIdx: number | null | undefined;
-    let nextId: string | null | undefined;
-    let nextEntrance: number | null | undefined;
 
     // We are the end of this curve in our direction of travel
     if ((progress >= 1.0 && isPositive) || (progress <= 0 && !isPositive)) {
@@ -936,7 +966,20 @@ const stepGameObject = (
             objectId,
             nextEntrance === 0 ? OBJECT_SPEED : -OBJECT_SPEED,
           );
-          s.setCurveProgress(objectId, nextEntrance === 0 ? 0 : 1);
+          let nextProgress = nextEntrance === 0 ? 0 : 1;
+          if (nextDistance !== undefined) {
+            const tilePercent = worldDistanceToTilePercent(
+              nextTile,
+              nextDistance,
+            );
+            nextProgress = nextEntrance === 0 ? tilePercent : 1 - tilePercent;
+          }
+          console.log('moving to next curve', {
+            nextProgress,
+            nextEntrance,
+            nextDistance,
+          });
+          s.setCurveProgress(objectId, nextProgress);
           // If connecting to a T junction
         } else if (nextTile.type === 't') {
           s.setCurrentCurveIndex(objectId, nextEntrance);
@@ -945,14 +988,23 @@ const stepGameObject = (
           s.setNextConnection(objectId, -1);
           // All T junction tile curves point inward so go positive
           s.setMomentum(objectId, OBJECT_SPEED);
-          s.setCurveProgress(objectId, 0);
+
+          let nextProgress = 0;
+          // This might be wrong pushing through middle of T?
+          if (nextDistance !== undefined) {
+            nextProgress = worldDistanceToTilePercent(nextTile, nextDistance);
+          }
+          console.log('moving to next curve', {
+            nextProgress,
+            nextEntrance,
+            nextDistance,
+          });
+          s.setCurveProgress(objectId, nextProgress);
         }
       }
     }
   }
 };
-
-let hasPaused = false;
 
 const Game = () => {
   const [, key] = useKeyboardControls();
@@ -1117,11 +1169,12 @@ const Game = () => {
 
   useFrame((state, delta) => {
     renderBackground();
+    const st = useGameStore.getState();
     if (key().p) {
-      hasPaused = !hasPaused;
+      st.setIsPaused(!st.isPaused);
       return;
     }
-    if (hasPaused) {
+    if (st.isPaused) {
       if (!key().s) {
         return;
       }
@@ -1293,6 +1346,26 @@ const Game = () => {
                     {tile.id}
                   </Html>
                 )}
+                {isRailTile(tile) ? (
+                  <Html
+                    className={cx('bg-sky-900 idOverlay')}
+                    position={tilesComputed[tile.id]?.curves?.[0].getPointAt(
+                      0.05,
+                    )}
+                  >
+                    0
+                  </Html>
+                ) : null}
+                {isRailTile(tile) ? (
+                  <Html
+                    className={cx('bg-sky-900 idOverlay')}
+                    position={tilesComputed[tile.id]?.curves?.[0].getPointAt(
+                      0.95,
+                    )}
+                  >
+                    1
+                  </Html>
+                ) : null}
                 {isRailTile(tile) ? (
                   <mesh>
                     <tubeGeometry

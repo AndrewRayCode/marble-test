@@ -247,6 +247,8 @@ export interface GameState {
   setIsInputFocused: (isInputFocused: boolean) => void;
 
   // Game state
+  isPaused: boolean;
+  setIsPaused: (isPaused: boolean) => void;
   gameStarted: boolean;
   setGameStarted: (gameStarted: boolean) => void;
   currentLevelId: string | null;
@@ -529,6 +531,9 @@ export const useGameStore = create<GameState>((set, get) => ({
   isInputFocused: false,
   setIsInputFocused: (isInputFocused) => set({ isInputFocused }),
 
+  // Game state
+  isPaused: false,
+  setIsPaused: (isPaused) => set({ isPaused }),
   gameStarted: false,
   setGameStarted: (gameStarted) => set({ gameStarted }),
   currentLevelId: null,
@@ -914,6 +919,7 @@ export const useGameStore = create<GameState>((set, get) => ({
     const friends = level.tiles.filter((t) => t.type === 'friend');
 
     set({
+      isPaused: false,
       semiDynamicObjects: {
         [PLAYER_ID]: {
           ...consSemiDynamicState(),
