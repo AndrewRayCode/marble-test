@@ -130,6 +130,10 @@ const findCollisions = (
   return collisions;
 };
 
+/**
+ * Given a real world length in world units, convert it to how for along this
+ * curve we have to go to reach that distance
+ */
 const worldDistanceToTilePercent = (tile: Tile, distance: number) => {
   if (tile.type === 'cap') {
     return (1 / INTO_CAP) * distance;
@@ -142,6 +146,9 @@ const worldDistanceToTilePercent = (tile: Tile, distance: number) => {
   }
   return distance;
 };
+/**
+ * Given a percent along a curve, determine how far in world units it is
+ */
 const tilePercentToWorldDistance = (tile: Tile, percent: number) => {
   if (tile.type === 'cap') {
     return INTO_CAP * percent;
@@ -155,7 +162,12 @@ const tilePercentToWorldDistance = (tile: Tile, percent: number) => {
   return percent;
 };
 
-const snepPep = (
+/**
+ * Collision resolution: Given object A is colliding with object B, figure out
+ * what percent on the curve to place object A so that it is not colliding with
+ * object B
+ */
+const snapCollision = (
   aPosition: [number, number, number],
   aCurvePercent: number,
   aTile: Tile,
@@ -195,7 +207,10 @@ const snepPep = (
     // to the right tile
     const newPercent = bCurvePercent + bTowardsA * percentToSnapBack;
     // Except on cap tiles - you can't go past the dead end!
-    return aTile.type === 'cap' ? Math.min(1, newPercent) : newPercent;
+    return [
+      aTile.type === 'cap' ? Math.min(1, newPercent) : newPercent,
+      -bTowardsA,
+    ];
   }
 
   // If A and B are on different tiles, we need to get the math done for tile
@@ -233,41 +248,37 @@ const snepPep = (
       higherAPosition.distanceTo(bPosV) < aPosV.distanceTo(bPosV) ? 1 : -1;
   }
 
+  // There are more edge cases so keeping this for now to uncomment for testing
   // if (hasPaused) {
-  console.log({
-    aTile: aTile,
-    bTile: bTile,
-    snapDistance,
-    aCurvePercent,
-    bCurvePercent,
-    aTowardsB,
-    bTowardsA,
-    remainingSpatialDistanceAlongCurveA,
-    remainingAPercent,
-  });
+  // console.log({
+  //   aTile: aTile,
+  //   bTile: bTile,
+  //   snapDistance,
+  //   aCurvePercent,
+  //   bCurvePercent,
+  //   aTowardsB,
+  //   bTowardsA,
+  //   remainingSpatialDistanceAlongCurveA,
+  //   remainingAPercent,
+  // });
   // }
 
-  return clamp(
-    // If this is right, I can't figure out why it's right! Let's say A is
-    // traveling from left to right, and it came from 1, and it's going to 0.
-    // And B is further right. A towards B is negative, because it's going to
-    // zero. So we want to snap to the position of the curve towards B, which is
-    // 0, and then add in the remaining A percent.
-    //
-    // But the below is basically the opposite logic - if a towards B is
-    // negative, it returns the negation... which works in the one example I'm
-    // testing with. I hope the truth reveals itself.
-    // aTowardsB < 0 ? 1.0 - remainingAPercent : remainingAPercent,
-
-    // This is right for moving to a cap tile, where both tiles meet at 0,
-    // Becuase if A is negative going towards B, then 0 is between A and B,
-    // and we want to remove % away from 0.
-    aTowardsB < 0 ? remainingAPercent : 1.0 - remainingAPercent,
-    0,
-    1,
-  );
+  return [
+    // This bracn only happens if we stay on the same tile, so clamp for safety
+    clamp(
+      // Let's say A is traveling from left to right, and it came from 1, and
+      // it's going to 0. And B is further right. A towards B is negative,
+      // because it's going to zero. So we want to snap to the position of the
+      // curve towards B, which is 0, and then add in the remaining A percent.
+      aTowardsB < 0 ? remainingAPercent : 1.0 - remainingAPercent,
+      0,
+      1,
+    ),
+    aTowardsB,
+  ];
 };
 
+// TODO: This is used for static gates - merge with above function?
 const snapProgress = (
   objectId: string,
   s: GameState,
@@ -337,6 +348,29 @@ const snapProgress = (
   return [ef, newProgress] as const;
 };
 
+/**
+ * Figure out the Vector3 position of the entrance we came from on this tile
+ */
+const getEnteredFrom = (
+  s: GameState,
+  currentTile: Tile,
+  enteredFrom: number,
+) => {
+  const tc = s.tilesComputed[currentTile.id];
+  // If this is a T junction and we came from the middle, the exited
+  // from tile won't have a position, so set it to the middle of the T
+  return currentTile.type === 't' && enteredFrom === -1
+    ? tc?.curves[0].getPointAt(1)
+    : // If we are on a cap and came from the end piece, calculate the entrance
+      // as the dead end point of the cap
+      currentTile.type === 'cap' && enteredFrom === -1
+      ? tc?.curves[0].getPointAt(1)
+      : tc?.exits?.[enteredFrom];
+};
+
+/**
+ * Step the game simulation for this object for one frame
+ */
 const stepGameObject = (
   delta: number,
   level: Level,
@@ -656,146 +690,124 @@ const stepGameObject = (
     let nextEntrance: number | null | undefined;
     let nextDistance: number | undefined;
 
+    /**
+     * Collision handling
+     */
     if (collisions[objectId]) {
-      const nextPoint = currentCurve.getPointAt(
-        clamp(progress + progress * momentum * delta, 0, 1),
+      const otherId = collisions[objectId];
+      // If the player collides with a friend, we want to get rules like "do we
+      // bounce off or stop" from the friend. If we *are* a friend and we hit
+      // another friend, we want to use our *own* rules.
+      const selfFriendOrOtherFriend = level.tiles.find(
+        (t): t is FriendTile =>
+          t.id === (objectId === PLAYER_ID ? otherId : objectId),
       );
-      // Handle player collision
-      if (objectId === PLAYER_ID) {
-        console.log(
-          'player on this frame collided with ',
-          collisions[objectId],
+      if (selfFriendOrOtherFriend) {
+        const otherPos = s.dynamicObjects[otherId].position;
+
+        const otherSemiDynamic = s.semiDynamicObjects[otherId];
+        const otherDynamic = s.dynamicObjects[otherId];
+        const otherTile = level.tiles.find(
+          (t) => t.id === otherSemiDynamic.currentTileId,
         );
-        const other = level.tiles.find(
-          (t): t is FriendTile => t.id === collisions[objectId],
+
+        // This function does the heavy lifting of determing where on the curve
+        // to snap us ot after a collision, and also what direction along the
+        // curve the colliding object is at
+        const [newProgress, directionToFriend] = snapCollision(
+          // Current object
+          point.toArray(),
+          progress,
+          currentTile,
+          currentCurve,
+          SPHERE_RADIUS,
+          // Other object
+          otherPos,
+          otherDynamic.curveProgress,
+          otherTile!,
+          s.tilesComputed[otherSemiDynamic.currentTileId!]?.curves[
+            otherSemiDynamic.currentCurveIndex
+          ],
+          SPHERE_RADIUS,
         );
-        if (other) {
-          const otherPos = s.dynamicObjects[other.id].position;
-          const isGoingTowards =
-            nextPoint.distanceTo(new Vector3(...otherPos)) <
-            point.distanceTo(new Vector3(...otherPos));
-          // if (
-          //   isGoingTowards &&
-          //   other.hitBehavior === 'stop' &&
-          //   momentum !== 0
-          // ) {
-          // const [ef, newProgress] = snapProgress(
-          //   PLAYER_ID,
-          //   s,
-          //   momentum,
-          //   currentTile,
-          //   enteredFrom,
-          //   otherPos,
-          //   SPHERE_RADIUS * 2,
-          // );
-
-          const otherSemiDynamic = s.semiDynamicObjects[other.id];
-          const otherDynamic = s.dynamicObjects[other.id];
-          const otherTile = level.tiles.find(
-            (t) => t.id === otherSemiDynamic.currentTileId,
-          );
-
-          const newProgress = snepPep(
-            point.toArray(),
-            progress,
-            currentTile,
-            currentCurve,
-            SPHERE_RADIUS,
-            otherPos,
-            otherDynamic.curveProgress,
-            otherTile!,
-            s.tilesComputed[otherSemiDynamic.currentTileId!]?.curves[
-              otherSemiDynamic.currentCurveIndex
-            ],
-            SPHERE_RADIUS,
-          );
-          if (s.isPaused) {
-            console.log('result of snepPep() from', { curveProgress }, 'to', {
-              newProgress,
-            });
-          }
-          // We stayed on the same tile
-          if (newProgress >= 0 && newProgress <= 1) {
-            // TODO handle case of newprogress being <0 or >1
-
-            const newPoint = currentCurve.getPointAt(newProgress);
-            s.setMomentum(objectId, 0);
-            point = newPoint;
-            s.setPosition(objectId, point.toArray());
-            progress = newProgress;
-
-            // s.setBonkBackTo({
-            //   nextDirection: momentum < 0 ? 1 : -1,
-            //   lastExit: ef.toArray(),
-            // });
-
-            s.setCurveProgress(objectId, newProgress);
-
-            // playSfx['metalHit']();
-            // playSfx['metalHit2']();
-            // } else if (isGoingTowards && other.hitBehavior === 'bounce') {
-            //   s.setMomentum(
-            //     objectId,
-            //     momentum > 0 ? -OBJECT_SPEED : OBJECT_SPEED,
-            //   );
-            //   s.setEnteredFrom(objectId, nextConnection!);
-            //   s.setNextConnection(objectId, enteredFrom);
-            // }
-            // We got booted to a new tile...
-          } else {
-            progress = clamp(newProgress, 0, 1);
-            // next progress is the amount into the next tile to go - BUT we
-            // don't know the next tile yet!
-            nextDistance = tilePercentToWorldDistance(
-              currentTile,
-              newProgress < 0 ? Math.abs(newProgress) : newProgress - 1,
-            );
-            console.log('push bumped to new tile!', {
-              newProgress,
-              nextDistance,
-            });
-            // nextProgress = newProgress;
-            isPositive = newProgress > 1;
-          }
+        if (s.isPaused) {
+          console.log('result of snepPep() from', { curveProgress }, 'to', {
+            newProgress,
+          });
         }
-        // Handle other object collision
-      } else if (currentObject?.type === 'friend') {
-        // const otherPos = s.dynamicObjects[PLAYER_ID].position;
-        // const isGoingTowards =
-        //   nextPoint.distanceTo(new Vector3(...otherPos)) <
-        //   point.distanceTo(new Vector3(...otherPos));
-        // if (isGoingTowards) {
-        //   playSfx['metalHit']();
-        //   playSfx['metalHit2']();
-        //   if (currentObject.hitBehavior === 'stop' && momentum !== 0) {
-        //     const [_, newProgress] = snapProgress(
-        //       currentObject.id,
-        //       s,
-        //       momentum,
-        //       currentTile,
-        //       enteredFrom,
-        //       otherPos,
-        //       SPHERE_RADIUS * 2,
-        //     );
-        //     const newPoint = currentCurve.getPointAt(newProgress);
-        //     s.setMomentum(objectId, 0);
-        //     point = newPoint;
-        //     s.setPosition(objectId, point.toArray());
-        //     progress = newProgress;
-        //     s.setCurveProgress(objectId, newProgress);
-        //   } else if (currentObject.hitBehavior === 'bounce') {
-        //     s.setMomentum(
-        //       objectId,
-        //       momentum > 0 ? -OBJECT_SPEED : OBJECT_SPEED,
-        //     );
-        //     s.setEnteredFrom(objectId, nextConnection!);
-        //     s.setNextConnection(objectId, enteredFrom);
-        //   }
-        // }
+
+        // Collision possible result: We snapped to a curve percent on the same
+        // tile, aka we did not get bumped to a new tile.
+        if (newProgress >= 0 && newProgress <= 1) {
+          const newPoint = currentCurve.getPointAt(newProgress);
+          s.setMomentum(objectId, 0);
+          point = newPoint;
+          s.setPosition(objectId, point.toArray());
+          progress = newProgress;
+
+          s.setCurveProgress(objectId, newProgress);
+
+          // Collision possible result: If the progress on this curve we got
+          // snapped to is out of bounds for this curve, calculate some
+          // information to pass on later in the loop for resolving the tile
+        } else {
+          progress = clamp(newProgress, 0, 1);
+          // Next progress is the amount into the next tile to go - BUT we
+          // don't know the next tile yet! Setting nextDistance is handled by
+          // the tile transition code later in the loop
+          nextDistance = tilePercentToWorldDistance(
+            currentTile,
+            newProgress < 0 ? Math.abs(newProgress) : newProgress - 1,
+          );
+          // Force a direction to trigger the next tile if() check later
+          isPositive = newProgress > 1;
+        }
+
+        playSfx['metalHit']();
+        playSfx['metalHit2']();
+
+        // If we should stop and we are moving
+        if (selfFriendOrOtherFriend.hitBehavior === 'stop' && momentum !== 0) {
+          s.setMomentum(objectId, 0);
+          // Only player has directional arrows
+          if (objectId === PLAYER_ID) {
+            const ef = getEnteredFrom(s, currentTile, enteredFrom);
+            // Edge case: at the start of the game, there is no tile entrance
+            // we came from!
+            if (ef) {
+              s.setBonkBackTo({
+                nextDirection: momentum < 0 ? 1 : -1,
+                lastExit: ef.toArray(),
+              });
+            } else {
+              // We were bonked while we were stopped. I think this is an no-op,
+              // but TODO: resetting directional arrows later, also this does
+              // not account for the case where we were bonked to stop, but are
+              // holding an arrow to keep moving
+            }
+          }
+        } else if (
+          selfFriendOrOtherFriend.hitBehavior === 'bounce' &&
+          // Edge case: If we're at the end of a dead end tile, there's nowhere
+          // to bounce to!
+          (currentTile.type !== 'cap' || progress !== 1)
+        ) {
+          s.setMomentum(
+            objectId,
+            // Bounce away from friend, regardless of current direction
+            directionToFriend > 0 ? -OBJECT_SPEED : OBJECT_SPEED,
+          );
+          s.setEnteredFrom(objectId, nextConnection!);
+          s.setNextConnection(objectId, enteredFrom);
+        }
       }
     }
 
-    // We are the end of this curve in our direction of travel
+    /**
+     * Tile transition check. If this statement is true, we are the end of this
+     * curve in our direction of travel, and need to figure out what tile to
+     * move to.
+     */
     if ((progress >= 1.0 && isPositive) || (progress <= 0 && !isPositive)) {
       // We have landed on the junction in the middle of the T
       if (currentTile.type === 'cap') {
@@ -936,6 +948,7 @@ const stepGameObject = (
           console.log('transition to', {
             nextId,
             progress,
+            isPositive,
             momentum,
             curveProgress,
           });
@@ -974,11 +987,13 @@ const stepGameObject = (
             );
             nextProgress = nextEntrance === 0 ? tilePercent : 1 - tilePercent;
           }
-          console.log('moving to next curve', {
-            nextProgress,
-            nextEntrance,
-            nextDistance,
-          });
+          if (s.isPaused && objectId === PLAYER_ID) {
+            console.log('moving to next curve', {
+              nextProgress,
+              nextEntrance,
+              nextDistance,
+            });
+          }
           s.setCurveProgress(objectId, nextProgress);
           // If connecting to a T junction
         } else if (nextTile.type === 't') {
@@ -1235,8 +1250,8 @@ const Game = () => {
       <color attach="background" args={['white']} />
       <ambientLight intensity={0.1} />
       <pointLight
-        position={[0, 4, 0]}
-        intensity={3}
+        position={[0, 8, 0]}
+        intensity={5}
         castShadow
         ref={pointLight}
       />
