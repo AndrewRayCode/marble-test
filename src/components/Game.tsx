@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { use, useEffect, useMemo, useRef, useState } from 'react';
 import useSound from 'use-sound';
 import type { OrbitControls as OrbitControlsImpl } from 'three-stdlib';
-import { Mesh, Vector2, Vector3 } from 'three';
+import { CubicBezierCurve3, PointLight, Vector2, Vector3 } from 'three';
 import { clamp } from 'three/src/math/MathUtils.js';
 import { Camera, Canvas, useThree } from '@react-three/fiber';
 import {
@@ -33,7 +33,6 @@ import {
   PLAYER_ID,
   GameState,
   Level,
-  SemiDynamicState,
   Tile,
   DynamicState,
   FriendTile,
@@ -75,7 +74,7 @@ import { useBackgroundRender, useKeyPress } from '@/util/react';
 import styles from './game.module.css';
 import Player from './Tiles/Player';
 import Friend from './Tiles/Friend';
-import next from 'next';
+import { INTO_CAP } from '@/util/curves';
 
 const lowest = (a: {
   left: number;
@@ -106,21 +105,17 @@ type GameProps = {
 };
 
 const findCollisions = (
-  dynamicObjects: Record<string, DynamicState>,
+  checks: [string, [number, Vector3]][],
   radius: number,
 ): Record<string, string> => {
   const collisions: Record<string, string> = {};
-  const checks = Object.entries(dynamicObjects);
   if (checks.length < 2) return {};
 
-  // Single pass comparison avoiding duplicate checks
   for (let i = 0; i < checks.length - 1; i++) {
     for (let j = i + 1; j < checks.length; j++) {
       const one = checks[i];
       const two = checks[j];
-      const distanceSquared = new Vector3(...one[1].position).distanceToSquared(
-        new Vector3(...two[1].position),
-      );
+      const distanceSquared = one[1][1].distanceToSquared(two[1][1]);
 
       if (distanceSquared < radius * radius) {
         collisions[one[0]] = two[0];
@@ -131,7 +126,166 @@ const findCollisions = (
   return collisions;
 };
 
+/**
+ * Given a real world length in world units, convert it to how for along this
+ * curve we have to go to reach that distance
+ */
+const worldDistanceToTilePercent = (tile: Tile, distance: number) => {
+  if (tile.type === 'cap') {
+    return (1 / INTO_CAP) * distance;
+  }
+  if (tile.type === 'quarter') {
+    return 0.5 * Math.PI * distance;
+  }
+  if (tile.type === 't') {
+    return distance * 2;
+  }
+  return distance;
+};
+/**
+ * Given a percent along a curve, determine how far in world units it is
+ */
+const tilePercentToWorldDistance = (tile: Tile, percent: number) => {
+  if (tile.type === 'cap') {
+    return INTO_CAP * percent;
+  }
+  if (tile.type === 'quarter') {
+    return percent / (0.5 * Math.PI);
+  }
+  if (tile.type === 't') {
+    return percent / 2;
+  }
+  return percent;
+};
+
+const directionTowards = (
+  curve: CubicBezierCurve3,
+  curvePercent: number,
+  self: Vector3,
+  target: Vector3,
+) => {
+  let aTowardsB = 0;
+  if (curvePercent >= 0.99) {
+    const lowerAPosition = curve.getPointAt(Math.max(curvePercent - 0.01, 0));
+    aTowardsB =
+      // If lower position is closer, go negative towards B
+      lowerAPosition.distanceTo(target) < self.distanceTo(target) ? -1 : 1;
+  } else {
+    const higherAPosition = curve.getPointAt(Math.min(curvePercent + 0.01, 1));
+    aTowardsB =
+      // If higher position is closer, go positive towards B
+      higherAPosition.distanceTo(target) < self.distanceTo(target) ? 1 : -1;
+  }
+  return aTowardsB;
+};
+
+/**
+ * Collision resolution: Given object A is colliding with object B, figure out
+ * what percent on the curve to place object A so that it is not colliding with
+ * object B
+ */
+const snapCollision = (
+  aPosition: [number, number, number],
+  aCurvePercent: number,
+  aTile: Tile,
+  aCurve: CubicBezierCurve3,
+  aRadius: number,
+  bPosition: [number, number, number],
+  bCurvePercent: number,
+  bTile: Tile,
+  bCurve: CubicBezierCurve3,
+  bRadius: number,
+) => {
+  const aPosV = new Vector3(...aPosition);
+  const bPosV = new Vector3(...bPosition);
+  const snapDistance = aRadius + bRadius;
+
+  const bTowardsA = directionTowards(bCurve, bCurvePercent, bPosV, aPosV);
+
+  // If we're on the same tile...
+  if (aTile.id === bTile.id) {
+    // Then snap to the distance between A and B, in curve space
+    const percentToSnapBack = worldDistanceToTilePercent(aTile, snapDistance);
+    // This can intentionally be lower than 0 and higher than 1! In that case
+    // the snapped position is off the curve, and the consumer needs to move A
+    // to the right tile
+    const newPercent = bCurvePercent + bTowardsA * percentToSnapBack;
+    // Except on cap tiles - you can't go past the dead end!
+    return [
+      aTile.type === 'cap' ? Math.min(1, newPercent) : newPercent,
+      -bTowardsA,
+    ];
+  }
+
+  // If A and B are on different tiles, we need to get the math done for tile
+  // A's curve space
+
+  // If going down in percent is closer to A, aka if bTowardsA is negative, then
+  // "towards A" is towards 0% on B's tile, so we simply take how far along B
+  // already. Othewrise, it's the other direction, aka the reamining percent on
+  // the tile, aka 1 - bCurvePercent
+  const bPercentLeftOnThisTileTowardsA =
+    bTowardsA < 0 ? bCurvePercent : 1 - bCurvePercent;
+  const bCurveSpatial = tilePercentToWorldDistance(
+    bTile,
+    bPercentLeftOnThisTileTowardsA,
+  );
+
+  const remainingSpatialDistanceAlongCurveA = snapDistance - bCurveSpatial;
+  const remainingAPercent = worldDistanceToTilePercent(
+    aTile,
+    remainingSpatialDistanceAlongCurveA,
+  );
+
+  const aTowardsB = directionTowards(aCurve, aCurvePercent, aPosV, bPosV);
+  // let aTowardsB = 0;
+  // if (aCurvePercent >= 0.99) {
+  //   const lowerAPosition = aCurve.getPointAt(Math.max(aCurvePercent - 0.01, 0));
+  //   aTowardsB =
+  //     // If lower position is closer, go negative towards B
+  //     lowerAPosition.distanceTo(bPosV) < aPosV.distanceTo(bPosV) ? -1 : 1;
+  // } else {
+  //   const higherAPosition = aCurve.getPointAt(
+  //     Math.min(aCurvePercent + 0.01, 1),
+  //   );
+  //   aTowardsB =
+  //     // If higher position is closer, go positive towards B
+  //     higherAPosition.distanceTo(bPosV) < aPosV.distanceTo(bPosV) ? 1 : -1;
+  // }
+
+  // There are more edge cases so keeping this for now to uncomment for testing
+  // if (hasPaused) {
+  // console.log({
+  //   aTile: aTile,
+  //   bTile: bTile,
+  //   snapDistance,
+  //   aCurvePercent,
+  //   bCurvePercent,
+  //   aTowardsB,
+  //   bTowardsA,
+  //   remainingSpatialDistanceAlongCurveA,
+  //   remainingAPercent,
+  // });
+  // }
+
+  return [
+    // This bracn only happens if we stay on the same tile, so clamp for safety
+    clamp(
+      // Let's say A is traveling from left to right, and it came from 1, and
+      // it's going to 0. And B is further right. A towards B is negative,
+      // because it's going to zero. So we want to snap to the position of the
+      // curve towards B, which is 0, and then add in the remaining A percent.
+      aTowardsB < 0 ? remainingAPercent : 1.0 - remainingAPercent,
+      0,
+      1,
+    ),
+    aTowardsB,
+  ];
+};
+
+// TODO: This is used for static gates - merge with above function?
 const snapProgress = (
+  objectId: string,
   s: GameState,
   momentum: number,
   currentTile: Tile,
@@ -139,26 +293,40 @@ const snapProgress = (
   collisionPoint: [number, number, number],
   radius: number,
 ) => {
-  let ef = s.tilesComputed[currentTile.id]?.exits?.[enteredFrom];
-
-  // If this is a T junction and we came from the middle, the exited
-  // from tile won't have a position, so set it to the middle of the T
-  if (currentTile.type === 't' && enteredFrom === -1) {
-    ef = s.tilesComputed[currentTile.id]?.curves[0].getPointAt(1);
-  }
+  const tc = s.tilesComputed[currentTile.id];
+  // Figure out where we entered from in case we need to go back there
+  const ef =
+    // If this is a T junction and we came from the middle, the exited
+    // from tile won't have a position, so set it to the middle of the T
+    currentTile.type === 't' && enteredFrom === -1
+      ? tc?.curves[0].getPointAt(1)
+      : // If we are on a cap and came from the end piece, calculate the entrance
+        // as the dead end point of the cap
+        currentTile.type === 'cap' && enteredFrom === -1
+        ? tc?.curves[0].getPointAt(1)
+        : tc?.exits?.[enteredFrom];
 
   let newProgress = 0;
 
   if (currentTile.type === 't') {
     // Figure out how much along this curve we need to go, and then
-    // double it, because T junction tiles are only half width!
+    // double it, because junction/cap curves are only half width!
     const progressToSnapTo = (TILE_WIDTH - radius) * 2.0;
     // Then reverse it again, because if we are leaving a T, we are
     // travelling in the negative direction, so the point on the
     // curve we want to bonk at is inverted
     newProgress = clamp(TILE_WIDTH - progressToSnapTo, 0, 1);
+  } else if (currentTile.type === 'cap') {
+    const progressToSnapTo = (TILE_WIDTH - radius) * (1 / INTO_CAP);
+    newProgress = clamp(progressToSnapTo, 0, 1);
+    console.log('snapped on cap', {
+      newProgress,
+      enteredFrom,
+      t: currentTile.type,
+      objectId,
+    });
   } else {
-    // Otherwise, take the entrance to the gate, and go back the
+    // Otherwise, take the entrance to the collision point, and go back the
     // collision distance, to determine snap position. Negate it if
     // going negative direction.
     const entranceToCollisionPoint = ef.distanceTo(
@@ -166,15 +334,234 @@ const snapProgress = (
     );
     const snappedDistance = entranceToCollisionPoint - radius;
     newProgress = clamp(
+      // The case of TILE_WIDTH - snappedDistance might be wrong, I think it's
+      // supposed to be 1.0 - (entranceToCollision - radius) - see the notebook
+      // drawing although there's low chance it will be readable tomorrow.
+      // retest this later with the marble on the other side, on a str8away
       momentum < 0 ? TILE_WIDTH - snappedDistance : snappedDistance,
       0,
       1,
     );
+    console.log('snapped on str8', {
+      newProgress,
+      enteredFrom,
+      t: currentTile.type,
+      objectId,
+    });
   }
 
   return [ef, newProgress] as const;
 };
 
+/**
+ * Figure out the Vector3 position of the entrance we came from on this tile
+ */
+const getEnteredFrom = (
+  s: GameState,
+  currentTile: Tile,
+  enteredFrom: number,
+) => {
+  const tc = s.tilesComputed[currentTile.id];
+  // If this is a T junction and we came from the middle, the exited
+  // from tile won't have a position, so set it to the middle of the T
+  return currentTile.type === 't' && enteredFrom === -1
+    ? tc?.curves[0].getPointAt(1)
+    : // If we are on a cap and came from the end piece, calculate the entrance
+      // as the dead end point of the cap
+      currentTile.type === 'cap' && enteredFrom === -1
+      ? tc?.curves[0].getPointAt(1)
+      : tc?.exits?.[enteredFrom];
+};
+
+const stepCurveProgress = (
+  delta: number,
+  level: Level,
+  objectId: string,
+  s: GameState,
+): [number, Vector3] => {
+  const { currentCurveIndex, momentum } = s.semiDynamicObjects[objectId];
+  const { curveProgress } = s.dynamicObjects[objectId];
+  const currentTile = level.tiles.find(
+    (t): t is TrackTile =>
+      t.id === s.semiDynamicObjects[objectId].currentTileId,
+  );
+
+  // Type safe bail-out for later, like falling out of level
+  if (!currentTile) {
+    return [curveProgress, new Vector3()];
+  }
+
+  const currentCurve =
+    s.tilesComputed[currentTile.id]?.curves?.[currentCurveIndex];
+
+  const propsoedProgress = clamp(
+    curveProgress +
+      momentum *
+        delta *
+        (currentTile.type === 'cap'
+          ? 4.0
+          : currentTile.type === 't'
+            ? 2.0
+            : 1.0),
+    0,
+    1,
+  );
+  return [propsoedProgress, currentCurve.getPointAt(propsoedProgress)];
+};
+
+const processObjectCollision = (
+  s: GameState,
+  level: Level,
+  objectId: string,
+  proposedProgress: number,
+  collisionId: string,
+  proposedOtherProgress: number,
+  snappedCollisions: Set<string>,
+  collisionTileOverflows: Record<string, number>,
+  playSfx: Record<string, () => void>,
+) => {
+  const currentTileId = s.semiDynamicObjects[objectId].currentTileId;
+
+  const currentTile = level.tiles.find(
+    (t): t is TrackTile => t.id === currentTileId,
+  );
+
+  const { currentCurveIndex, enteredFrom, nextConnection, momentum } =
+    s.semiDynamicObjects[objectId];
+  const OBJECT_SPEED =
+    objectId === PLAYER_ID
+      ? PLAYER_SPEED
+      : parseFloat(
+          level.tiles.find((t): t is FriendTile => t.id === objectId)?.speed ||
+            '0',
+        );
+  // let isPositive = momentum >= 0;
+
+  // Type safe bail-out for later, like falling out of level
+  if (!currentTile) {
+    return;
+  }
+
+  const currentCurve =
+    s.tilesComputed[currentTile.id]?.curves?.[currentCurveIndex];
+
+  // If the player collides with a friend, we want to get rules like "do we
+  // bounce off or stop" from the friend. If we *are* a friend and we hit
+  // another friend, we want to use our *own* rules.
+  const selfFriendOrOtherFriend = level.tiles.find(
+    (t): t is FriendTile =>
+      t.id === (objectId === PLAYER_ID ? collisionId : objectId),
+  );
+  if (selfFriendOrOtherFriend) {
+    const otherPos = s.dynamicObjects[collisionId].position;
+
+    const otherSemiDynamic = s.semiDynamicObjects[collisionId];
+    // const otherDynamic = s.dynamicObjects[collisionId];
+    const otherTile = level.tiles.find(
+      (t) => t.id === otherSemiDynamic.currentTileId,
+    );
+
+    const point = currentCurve.getPointAt(proposedProgress);
+
+    // This function does the heavy lifting of determing where on the curve
+    // to snap us ot after a collision, and also what direction along the
+    // curve the colliding object is at
+    const [newProgress, directionToFriend] = snapCollision(
+      // Current object
+      point.toArray(),
+      proposedProgress,
+      currentTile,
+      currentCurve,
+      SPHERE_RADIUS,
+      // Other object
+      otherPos,
+      proposedOtherProgress,
+      otherTile!,
+      s.tilesComputed[otherSemiDynamic.currentTileId!]?.curves[
+        otherSemiDynamic.currentCurveIndex
+      ],
+      SPHERE_RADIUS,
+    );
+    if (s.isPaused) {
+      console.log('result of snepPep() from', { proposedProgress }, 'to', {
+        newProgress,
+      });
+    }
+
+    if (momentum !== 0 && !snappedCollisions.has(objectId)) {
+      console.log('snapping to collision', objectId);
+      // Collision possible result: We snapped to a curve percent on the same
+      // tile, aka we did not get bumped to a new tile.
+      if (newProgress >= 0 && newProgress <= 1) {
+        s.setMomentum(objectId, 0);
+        s.setPosition(objectId, point.toArray());
+
+        s.setCurveProgress(objectId, newProgress);
+
+        // Collision possible result: If the progress on this curve we got
+        // snapped to is out of bounds for this curve, calculate some
+        // information to pass on later in the loop for resolving the tile
+      } else {
+        s.setCurveProgress(objectId, newProgress);
+        s.setMomentum(objectId, newProgress > 1 ? -OBJECT_SPEED : OBJECT_SPEED);
+        // Next progress is the amount into the next tile to go - BUT we
+        // don't know the next tile yet! Setting nextDistance is handled by
+        // the tile transition code later in the loop
+        collisionTileOverflows[objectId] = tilePercentToWorldDistance(
+          currentTile,
+          newProgress < 0 ? Math.abs(newProgress) : newProgress - 1,
+        );
+        // Force a direction to trigger the next tile if() check later
+        // will this automaticlaly work with the game step loop?
+        // isPositive = newProgress > 1;
+      }
+    }
+
+    playSfx['metalHit']();
+    playSfx['metalHit2']();
+
+    // If we should stop and we are moving
+    if (selfFriendOrOtherFriend.hitBehavior === 'stop' && momentum !== 0) {
+      s.setMomentum(objectId, 0);
+      // Only player has directional arrows
+      if (objectId === PLAYER_ID) {
+        const ef = getEnteredFrom(s, currentTile, enteredFrom);
+        // Edge case: at the start of the game, there is no tile entrance
+        // we came from!
+        if (ef) {
+          s.setBonkBackTo({
+            nextDirection: momentum < 0 ? 1 : -1,
+            lastExit: ef.toArray(),
+          });
+        } else {
+          // We were bonked while we were stopped. I think this is an no-op,
+          // but TODO: resetting directional arrows later, also this does
+          // not account for the case where we were bonked to stop, but are
+          // holding an arrow to keep moving
+        }
+      }
+    } else if (
+      selfFriendOrOtherFriend.hitBehavior === 'bounce' &&
+      // Edge case: If we're at the end of a dead end tile, there's nowhere
+      // to bounce to!
+      (currentTile.type !== 'cap' || proposedProgress !== 1)
+    ) {
+      s.setMomentum(
+        objectId,
+        // Bounce away from friend, regardless of current direction
+        directionToFriend > 0 ? -OBJECT_SPEED : OBJECT_SPEED,
+      );
+      s.setEnteredFrom(objectId, nextConnection!);
+      s.setNextConnection(objectId, enteredFrom);
+    }
+  }
+
+  snappedCollisions.add(collisionId);
+};
+
+/**
+ * Step the game simulation for this object for one frame
+ */
 const stepGameObject = (
   delta: number,
   level: Level,
@@ -183,7 +570,7 @@ const stepGameObject = (
   camera: Camera,
   arrowPositions: Record<string, Vector3[]>,
   s: GameState,
-  collisions: Record<string, string>,
+  collisionTileOverflows: Record<string, number>,
   playSfx: Record<string, () => void>,
 ) => {
   const currentTileId = s.semiDynamicObjects[objectId].currentTileId;
@@ -282,7 +669,10 @@ const stepGameObject = (
     objectId === PLAYER_ID
       ? PLAYER_SPEED
       : parseFloat((currentObject as FriendTile)?.speed || '0');
-  const { curveProgress } = s.dynamicObjects[objectId];
+  const { curveProgress, position } = s.dynamicObjects[objectId];
+
+  let progress = curveProgress;
+  let point = new Vector3(...position);
   const isPositive = momentum >= 0;
 
   // Type safe bail-out for later, like falling out of level
@@ -293,25 +683,25 @@ const stepGameObject = (
   const currentCurve =
     s.tilesComputed[currentTile.id]?.curves?.[currentCurveIndex];
 
-  let progress = clamp(
-    curveProgress +
-      momentum *
-        delta *
-        (currentTile.type === 'cap'
-          ? 4.0
-          : currentTile.type === 't'
-            ? 2.0
-            : 1.0),
-    0,
-    1,
-  );
+  // let progress = clamp(
+  //   curveProgress +
+  //     momentum *
+  //       delta *
+  //       (currentTile.type === 'cap'
+  //         ? 4.0
+  //         : currentTile.type === 't'
+  //           ? 2.0
+  //           : 1.0),
+  //   0,
+  //   1,
+  // );
 
-  s.setCurveProgress(objectId, progress);
+  // s.setCurveProgress(objectId, progress);
 
   if (currentCurve && currentTile) {
     // Get the point along the curve
-    let point = currentCurve.getPointAt(progress);
-    s.setPosition(objectId, point.toArray());
+    // let point = currentCurve.getPointAt(progress);
+    // s.setPosition(objectId, point.toArray());
 
     level.tiles
       .filter((t) => t.type === 'coin' && !s.collectedItems.has(t.id))
@@ -343,6 +733,7 @@ const stepGameObject = (
       })
       .forEach((gate) => {
         const [ef, newProgress] = snapProgress(
+          'x',
           s,
           momentum,
           currentTile,
@@ -487,88 +878,17 @@ const stepGameObject = (
       s.setMomentum(objectId, isUp || isLeft ? OBJECT_SPEED : -OBJECT_SPEED);
     }
 
-    if (collisions[objectId]) {
-      const nextPoint = currentCurve.getPointAt(
-        clamp(progress + progress * momentum * delta, 0, 1),
-      );
-      // Handle player collision
-      if (objectId === PLAYER_ID) {
-        const other = level.tiles.find(
-          (t): t is FriendTile => t.id === collisions[objectId],
-        );
-        if (other) {
-          const otherPos = s.dynamicObjects[other.id].position;
-          const isGoingTowards =
-            nextPoint.distanceTo(new Vector3(...otherPos)) <
-            point.distanceTo(new Vector3(...otherPos));
-          if (
-            isGoingTowards &&
-            other.hitBehavior === 'stop' &&
-            momentum !== 0
-          ) {
-            const [_, newProgress] = snapProgress(
-              s,
-              momentum,
-              currentTile,
-              enteredFrom,
-              otherPos,
-              SPHERE_RADIUS * 2,
-            );
-
-            const newPoint = currentCurve.getPointAt(newProgress);
-            s.setMomentum(objectId, 0);
-            point = newPoint;
-            s.setPosition(objectId, point.toArray());
-            progress = newProgress;
-            s.setCurveProgress(objectId, newProgress);
-
-            playSfx['metalHit']();
-            playSfx['metalHit2']();
-          }
-        }
-        // Handle other object collision
-      } else if (currentObject?.type === 'friend') {
-        const otherPos = s.dynamicObjects[PLAYER_ID].position;
-        const isGoingTowards =
-          nextPoint.distanceTo(new Vector3(...otherPos)) <
-          point.distanceTo(new Vector3(...otherPos));
-        if (isGoingTowards) {
-          playSfx['metalHit']();
-          playSfx['metalHit2']();
-          if (currentObject.hitBehavior === 'stop' && momentum !== 0) {
-            const [_, newProgress] = snapProgress(
-              s,
-              momentum,
-              currentTile,
-              enteredFrom,
-              otherPos,
-              SPHERE_RADIUS * 2,
-            );
-
-            const newPoint = currentCurve.getPointAt(newProgress);
-            s.setMomentum(objectId, 0);
-            point = newPoint;
-            s.setPosition(objectId, point.toArray());
-            progress = newProgress;
-            s.setCurveProgress(objectId, newProgress);
-          } else if (currentObject.hitBehavior === 'bounce') {
-            s.setMomentum(
-              objectId,
-              momentum > 0 ? -OBJECT_SPEED : OBJECT_SPEED,
-            );
-            s.setEnteredFrom(objectId, nextConnection!);
-            s.setNextConnection(objectId, enteredFrom);
-          }
-        }
-      }
-    }
-
     let nextTile: TrackTile | undefined;
     let nextIdx: number | null | undefined;
     let nextId: string | null | undefined;
     let nextEntrance: number | null | undefined;
+    let nextDistance: number | undefined;
 
-    // We are the end of this curve in our direction of travel
+    /**
+     * Tile transition check. If this statement is true, we are the end of this
+     * curve in our direction of travel, and need to figure out what tile to
+     * move to.
+     */
     if ((progress >= 1.0 && isPositive) || (progress <= 0 && !isPositive)) {
       // We have landed on the junction in the middle of the T
       if (currentTile.type === 'cap') {
@@ -705,6 +1025,15 @@ const stepGameObject = (
 
       // If we detected there is somewhere to go...
       if (nextId !== undefined || nextEntrance !== undefined) {
+        if (objectId === PLAYER_ID) {
+          console.log('transition to', {
+            nextId,
+            progress,
+            isPositive,
+            momentum,
+            curveProgress,
+          });
+        }
         if (nextId === null || nextEntrance == null) {
           throw new Error('wtf?');
         } else {
@@ -720,6 +1049,9 @@ const stepGameObject = (
 
         s.setCurrentTileId(objectId, nextTile.id);
 
+        // ...
+        const nextDistance = collisionTileOverflows[objectId];
+
         // If connecting to a striaght tile
         if (isRailTile(nextTile)) {
           s.setCurrentCurveIndex(objectId, 0);
@@ -731,7 +1063,22 @@ const stepGameObject = (
             objectId,
             nextEntrance === 0 ? OBJECT_SPEED : -OBJECT_SPEED,
           );
-          s.setCurveProgress(objectId, nextEntrance === 0 ? 0 : 1);
+          let nextProgress = nextEntrance === 0 ? 0 : 1;
+          if (nextDistance !== undefined) {
+            const tilePercent = worldDistanceToTilePercent(
+              nextTile,
+              nextDistance,
+            );
+            nextProgress = nextEntrance === 0 ? tilePercent : 1 - tilePercent;
+          }
+          if (s.isPaused && objectId === PLAYER_ID) {
+            console.log('moving to next curve', {
+              nextProgress,
+              nextEntrance,
+              nextDistance,
+            });
+          }
+          s.setCurveProgress(objectId, nextProgress);
           // If connecting to a T junction
         } else if (nextTile.type === 't') {
           s.setCurrentCurveIndex(objectId, nextEntrance);
@@ -740,7 +1087,20 @@ const stepGameObject = (
           s.setNextConnection(objectId, -1);
           // All T junction tile curves point inward so go positive
           s.setMomentum(objectId, OBJECT_SPEED);
-          s.setCurveProgress(objectId, 0);
+
+          let nextProgress = 0;
+          // This might be wrong pushing through middle of T?
+          if (nextDistance !== undefined) {
+            nextProgress = worldDistanceToTilePercent(nextTile, nextDistance);
+          }
+          if (s.isPaused && objectId === PLAYER_ID) {
+            console.log('moving to next curve', {
+              nextProgress,
+              nextEntrance,
+              nextDistance,
+            });
+          }
+          s.setCurveProgress(objectId, nextProgress);
         }
       }
     }
@@ -754,9 +1114,6 @@ const Game = () => {
   const debugPoints = useGameStore((state) => state.debugPoints);
   const toggleDebug = useGameStore((state) => state.toggleDebug);
   const resetLevel = useGameStore((state) => state.resetLevel);
-  const currentCurveIndex = useGameStore(
-    (state) => state.semiDynamicObjects[PLAYER_ID].currentCurveIndex,
-  );
   const levels = useGameStore((state) => state.levels);
   const debug = useGameStore((state) => state.debug);
   const currentTileId = useGameStore(
@@ -778,6 +1135,7 @@ const Game = () => {
 
   // const { getCurrentViewport } = useThree((state) => state.viewport);
 
+  const pointLight = useRef<PointLight | null>(null);
   const orbit = useRef<OrbitControlsImpl>(null);
   const { camera } = useThree();
 
@@ -793,12 +1151,6 @@ const Game = () => {
     }
   }, [currentTileId, level]);
 
-  const currentCurve = useMemo(() => {
-    if (currentTile) {
-      return tilesComputed[currentTile.id]?.curves?.[currentCurveIndex];
-    }
-  }, [currentTile, currentCurveIndex, tilesComputed]);
-
   const arrowPositions = useMemo(
     () =>
       Object.entries(semiDynamicObjects).reduce<Record<string, Vector3[]>>(
@@ -808,12 +1160,12 @@ const Game = () => {
             ...acc,
             [objectId]: !currentTile
               ? []
-              : currentTile?.type === 't'
-                ? tilesComputed[currentTile.id].exits
-                : currentTile?.type === 'cap'
-                  ? [tilesComputed[currentTile.id]?.curves[0].getPointAt(0)]
-                  : bonkBackTo
-                    ? [new Vector3(...bonkBackTo.lastExit)]
+              : bonkBackTo
+                ? [new Vector3(...bonkBackTo.lastExit)]
+                : currentTile?.type === 't'
+                  ? tilesComputed[currentTile.id].exits
+                  : currentTile?.type === 'cap'
+                    ? [tilesComputed[currentTile.id]?.curves[0].getPointAt(0)]
                     : [
                         tilesComputed[currentTile.id]?.curves[0].getPointAt(0),
                         tilesComputed[currentTile.id]?.curves[0].getPointAt(1),
@@ -822,7 +1174,7 @@ const Game = () => {
         },
         {},
       ),
-    [tilesComputed, currentTileId, bonkBackTo],
+    [tilesComputed, bonkBackTo, semiDynamicObjects, level],
   );
 
   useKeyPress('edit', () => setIsEditing(!isEditing));
@@ -836,9 +1188,12 @@ const Game = () => {
   const [playMoneySfx] = useSound(moneySfx, { volume: 1 });
   const [playErrorSfx] = useSound(errorSfx, { volume: 1 });
   const [playSuccessSfx] = useSound(successSfx, { volume: 1 });
-  const [playMetalHitSfx] = useSound(metalSfx, { volume: 0.01 });
+  // const [playMetalHitSfx] = useSound(metalSfx, { volume: 0.01 });
+  // const [playMetalHit2Sfx] = useSound(metal2Sfx, { volume: 0.0 });
+  const [playMetalHitSfx] = useSound(metalSfx, { volume: 0.0 });
   const [playMetalHit2Sfx] = useSound(metal2Sfx, { volume: 0.0 });
-  const [playSpringboardSfx] = useSound(springboardSfx, { volume: 1 });
+  // const [playSpringboardSfx] = useSound(springboardSfx, { volume: 1 });
+  const [playSpringboardSfx] = useSound(springboardSfx, { volume: 0 });
   const [playGadget1Sfx] = useSound(gadget1Sfx, { volume: 0.25 });
   const [playGadget2Sfx] = useSound(gadget2Sfx, { volume: 0.25 });
   const [playDoorOpenSfx] = useSound(doorOpen, {
@@ -909,6 +1264,17 @@ const Game = () => {
 
   useFrame((state, delta) => {
     renderBackground();
+    const st = useGameStore.getState();
+    if (key().p) {
+      st.setIsPaused(!st.isPaused);
+      return;
+    }
+    if (st.isPaused) {
+      if (!key().s) {
+        return;
+      }
+      delta = 0.01;
+    }
 
     const s = useGameStore.getState();
 
@@ -916,8 +1282,55 @@ const Game = () => {
       return;
     }
 
-    const collisions = findCollisions(s.dynamicObjects, SPHERE_RADIUS * 2);
+    const friends = level.tiles.filter((t) => t.type === 'friend');
 
+    // Propose all of the new positions, but don't do anything with them yet
+    const proposedCurveProgresses = friends.reduce<
+      Record<string, [number, Vector3]>
+    >(
+      (acc, friend) => {
+        acc[friend.id] = stepCurveProgress(delta, level, friend.id, s);
+        return acc;
+      },
+      {
+        [PLAYER_ID]: stepCurveProgress(delta, level, PLAYER_ID, s),
+      },
+    );
+
+    const propositions = Object.entries(proposedCurveProgresses);
+
+    const collisionTileOverflows: Record<string, number> = {};
+    const processedCollisions = new Set<string>();
+
+    // Then check for collisions in the new proposed positions
+    const collisions = findCollisions(propositions, SPHERE_RADIUS * 2);
+
+    propositions.forEach(([objectId, [proposedProgress, proposedPosition]]) => {
+      // If there was a collision, snap the objects away from each other. This
+      // function updates the curve progress and position
+      if (collisions[objectId]) {
+        processObjectCollision(
+          s,
+          level,
+          objectId,
+          proposedProgress,
+          collisions[objectId],
+          proposedCurveProgresses[objectId][0],
+          processedCollisions,
+          collisionTileOverflows,
+          sfx,
+        );
+        // If there was no collision we are safe to commit the position
+      } else {
+        s.setCurveProgress(objectId, proposedProgress);
+        s.setPosition(objectId, proposedPosition.toArray());
+      }
+    });
+
+    // Refresh game store to get latest state updates (is this neccessary?)
+    const newS = useGameStore.getState();
+
+    // Then step the game objects with the new committed positions
     stepGameObject(
       delta,
       level,
@@ -925,33 +1338,31 @@ const Game = () => {
       key(),
       camera,
       arrowPositions,
-      s,
-      collisions,
+      newS,
+      collisionTileOverflows,
       sfx,
     );
     if (!isEditing) {
-      level.tiles
-        .filter((t) => t.type === 'friend')
-        .forEach((tile) => {
-          stepGameObject(
-            delta,
-            level,
-            tile.id,
-            key(),
-            camera,
-            arrowPositions,
-            s,
-            collisions,
-            sfx,
-          );
-        });
+      friends.forEach((tile) => {
+        stepGameObject(
+          delta,
+          level,
+          tile.id,
+          key(),
+          camera,
+          arrowPositions,
+          newS,
+          collisionTileOverflows,
+          sfx,
+        );
+      });
     }
 
     const coins = level.tiles.filter((t) => t.type === 'coin');
     if (
       coins.length &&
-      coins.filter((t) => !s.collectedItems.has(t.id)).length === 0 &&
-      !s.victory
+      coins.filter((t) => !newS.collectedItems.has(t.id)).length === 0 &&
+      !newS.victory
     ) {
       // playSuccessSfx();
       playArcadeWinSfx();
@@ -963,7 +1374,12 @@ const Game = () => {
     <>
       <color attach="background" args={['white']} />
       <ambientLight intensity={0.1} />
-      <pointLight position={[0, 4, 0]} intensity={3} castShadow />
+      <pointLight
+        position={[0, 8, 0]}
+        intensity={5}
+        castShadow
+        ref={pointLight}
+      />
       <Environment
         files="/envmaps/room.hdr"
         background
@@ -1071,6 +1487,26 @@ const Game = () => {
                   </Html>
                 )}
                 {isRailTile(tile) ? (
+                  <Html
+                    className={cx('bg-sky-900 idOverlay')}
+                    position={tilesComputed[tile.id]?.curves?.[0].getPointAt(
+                      0.05,
+                    )}
+                  >
+                    0
+                  </Html>
+                ) : null}
+                {isRailTile(tile) ? (
+                  <Html
+                    className={cx('bg-sky-900 idOverlay')}
+                    position={tilesComputed[tile.id]?.curves?.[0].getPointAt(
+                      0.95,
+                    )}
+                  >
+                    1
+                  </Html>
+                ) : null}
+                {isRailTile(tile) ? (
                   <mesh>
                     <tubeGeometry
                       args={[
@@ -1142,7 +1578,6 @@ const Game = () => {
 export default function ThreeScene({ dbLevels }: GameProps) {
   // const curveProgress = useStore((state) => state.curveProgress);
   const isEditing = useGameStore((state) => state.isEditing);
-  const debug = useGameStore((state) => state.debug);
   const levels = useGameStore((state) => state.levels);
   const currentLevelId = useGameStore((state) => state.currentLevelId);
   const setaCurrentLevelId = useGameStore((state) => state.setCurrentLevelId);
@@ -1199,6 +1634,8 @@ export default function ThreeScene({ dbLevels }: GameProps) {
           { name: 'one', keys: ['1'] },
           { name: 'two', keys: ['2'] },
           { name: 'three', keys: ['3'] },
+          { name: 'p', keys: ['p'] },
+          { name: 's', keys: ['s'] },
           { name: 'j', keys: ['j'] },
           { name: 's', keys: ['s'] },
           { name: 'q', keys: ['q'] },

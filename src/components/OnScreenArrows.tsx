@@ -1,7 +1,7 @@
 'use client';
 
 import { Html } from '@react-three/drei';
-import { useLayoutEffect, useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import cx from 'classnames';
 
 import { PLAYER_ID, TrackTile, useGameStore } from '@/store/gameStore';
@@ -59,7 +59,7 @@ const OnScreenArrows = () => {
     [tilesComputed, currentTile, bonkBackTo],
   );
 
-  useLayoutEffect(
+  useEffect(
     () =>
       // These need to update every frame, but we can't set state per frame,
       // nor do we want this component to render every frame, so subscribe to
@@ -81,7 +81,7 @@ const OnScreenArrows = () => {
             state.semiDynamicObjects[PLAYER_ID].momentum === 0 &&
             !state.victory
           ) {
-            htmlRef.style.display = 'block';
+            htmlRef.style.display = 'none' || 'block';
             arrowRef?.position?.copy(screenData.position);
             if (htmlRef) {
               htmlRef.textContent = arrowLookup[screenData.arrow];

@@ -247,6 +247,8 @@ export interface GameState {
   setIsInputFocused: (isInputFocused: boolean) => void;
 
   // Game state
+  isPaused: boolean;
+  setIsPaused: (isPaused: boolean) => void;
   gameStarted: boolean;
   setGameStarted: (gameStarted: boolean) => void;
   currentLevelId: string | null;
@@ -529,6 +531,9 @@ export const useGameStore = create<GameState>((set, get) => ({
   isInputFocused: false,
   setIsInputFocused: (isInputFocused) => set({ isInputFocused }),
 
+  // Game state
+  isPaused: false,
+  setIsPaused: (isPaused) => set({ isPaused }),
   gameStarted: false,
   setGameStarted: (gameStarted) => set({ gameStarted }),
   currentLevelId: null,
@@ -905,52 +910,65 @@ export const useGameStore = create<GameState>((set, get) => ({
     ) as TrackTile | undefined;
     console.log('Game reset! Starting on', { startingTile });
 
+    const playerCurveProgress =
+      startingTile?.type === 'cap' || startingTile?.type === 't' ? 1 : 0.5;
+    const playerPosition = startingTile
+      ? tilesComputed[startingTile.id].curves[0].getPointAt(playerCurveProgress)
+      : [0, 0, 0];
+
     const friends = level.tiles.filter((t) => t.type === 'friend');
 
     set({
+      isPaused: false,
       semiDynamicObjects: {
         [PLAYER_ID]: {
           ...consSemiDynamicState(),
           enteredFrom: startingTile?.type === 't' ? -1 : 0,
-          // TODO: Need a starting connection too!
           nextConnection: -1,
           currentTileId: startingTile?.id || null,
         },
         ...friends.reduce((acc, t) => {
-          const tile = level.tiles.find(
+          const startTile = level.tiles.find(
             (tt): tt is TrackTile => tt.id === t.startingTileId,
           );
           return {
             ...acc,
             [t.id]: {
               ...consSemiDynamicState(),
-              momentum: parseFloat(t.speed) * t.startingDirection,
-              enteredFrom: tile?.type === 't' ? -1 : 0,
-              // TODO: Need a starting connection too!
-              nextConnection: -1,
-              currentTileId: tile?.id || null,
+              momentum:
+                parseFloat(t.speed) *
+                // There's only one direction to go from a dead end!
+                (startTile?.type === 'cap' ? -1 : t.startingDirection),
+              enteredFrom: startTile?.type === 't' ? -1 : 0,
+              nextConnection: startTile?.type === 't' ? 1 : 0,
+              currentTileId: startTile?.id || null,
             },
           };
         }, {}),
       },
       dynamicObjects: {
         [PLAYER_ID]: {
-          ...consDynamicState(),
-          curveProgress:
-            startingTile?.type === 'cap' || startingTile?.type === 't'
-              ? 1
-              : 0.5,
+          curveProgress: playerCurveProgress,
+          position: playerPosition as [number, number, number],
         },
         ...friends.reduce((acc, t) => {
-          const tile = level.tiles.find(
+          const startTile = level.tiles.find(
             (tt): tt is TrackTile => tt.id === t.startingTileId,
           );
+
+          const curveProgress =
+            startTile?.type === 'cap' || startTile?.type === 't' ? 1 : 0.5;
+          const position = (
+            startTile
+              ? tilesComputed[startTile.id].curves[0].getPointAt(curveProgress)
+              : [0, 0, 0]
+          ) as [number, number, number];
+
           return {
             ...acc,
             [t.id]: {
-              ...consDynamicState(),
-              curveProgress:
-                tile?.type === 'cap' || tile?.type === 't' ? 1 : 0.5,
+              curveProgress,
+              position,
             },
           };
         }, {}),
