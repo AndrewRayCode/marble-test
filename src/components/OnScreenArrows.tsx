@@ -81,7 +81,7 @@ const OnScreenArrows = () => {
             state.semiDynamicObjects[PLAYER_ID].momentum === 0 &&
             !state.victory
           ) {
-            htmlRef.style.display = 'none' || 'block';
+            htmlRef.style.display = 'block';
             arrowRef?.position?.copy(screenData.position);
             if (htmlRef) {
               htmlRef.textContent = arrowLookup[screenData.arrow];

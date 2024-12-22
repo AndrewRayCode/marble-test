@@ -36,6 +36,7 @@ import {
   Tile,
   DynamicState,
   FriendTile,
+  useFrameKeys,
 } from '@/store/gameStore';
 import { randomInt, toScreen } from '@/util/math';
 import OnScreenArrows from './OnScreenArrows';
@@ -75,6 +76,20 @@ import styles from './game.module.css';
 import Player from './Tiles/Player';
 import Friend from './Tiles/Friend';
 import { INTO_CAP } from '@/util/curves';
+
+const Modal = ({
+  children,
+}: Readonly<{
+  children: React.ReactNode;
+}>) => {
+  return (
+    <div className="absolute inset-0 bg-gray-900 bg-opacity-25 flex items-center justify-center z-20 pointer-events-none">
+      <div className="bg-slate-900 p-6 rounded-xl drop-shadow-[0_0_25px_5px_rgba(0,0,0,1)] text-center">
+        {children}
+      </div>
+    </div>
+  );
+};
 
 const lowest = (a: {
   left: number;
@@ -185,22 +200,25 @@ const directionTowards = (
  * object B
  */
 const snapCollision = (
-  aPosition: [number, number, number],
+  aPosition: Vector3,
   aCurvePercent: number,
   aTile: Tile,
   aCurve: CubicBezierCurve3,
   aRadius: number,
-  bPosition: [number, number, number],
+  bPosition: Vector3,
   bCurvePercent: number,
   bTile: Tile,
   bCurve: CubicBezierCurve3,
   bRadius: number,
 ) => {
-  const aPosV = new Vector3(...aPosition);
-  const bPosV = new Vector3(...bPosition);
   const snapDistance = aRadius + bRadius;
 
-  const bTowardsA = directionTowards(bCurve, bCurvePercent, bPosV, aPosV);
+  const bTowardsA = directionTowards(
+    bCurve,
+    bCurvePercent,
+    bPosition,
+    aPosition,
+  );
 
   // If we're on the same tile...
   if (aTile.id === bTile.id) {
@@ -237,20 +255,25 @@ const snapCollision = (
     remainingSpatialDistanceAlongCurveA,
   );
 
-  const aTowardsB = directionTowards(aCurve, aCurvePercent, aPosV, bPosV);
+  const aTowardsB = directionTowards(
+    aCurve,
+    aCurvePercent,
+    aPosition,
+    bPosition,
+  );
   // let aTowardsB = 0;
   // if (aCurvePercent >= 0.99) {
   //   const lowerAPosition = aCurve.getPointAt(Math.max(aCurvePercent - 0.01, 0));
   //   aTowardsB =
   //     // If lower position is closer, go negative towards B
-  //     lowerAPosition.distanceTo(bPosV) < aPosV.distanceTo(bPosV) ? -1 : 1;
+  //     lowerAPosition.distanceTo(bPosition) < aPosition.distanceTo(bPosition) ? -1 : 1;
   // } else {
   //   const higherAPosition = aCurve.getPointAt(
   //     Math.min(aCurvePercent + 0.01, 1),
   //   );
   //   aTowardsB =
   //     // If higher position is closer, go positive towards B
-  //     higherAPosition.distanceTo(bPosV) < aPosV.distanceTo(bPosV) ? 1 : -1;
+  //     higherAPosition.distanceTo(bPosition) < aPosition.distanceTo(bPosition) ? 1 : -1;
   // }
 
   // There are more edge cases so keeping this for now to uncomment for testing
@@ -374,27 +397,28 @@ const getEnteredFrom = (
 };
 
 const stepCurveProgress = (
+  s: GameState,
   delta: number,
   level: Level,
   objectId: string,
-  s: GameState,
 ): [number, Vector3] => {
-  const { currentCurveIndex, momentum } = s.semiDynamicObjects[objectId];
+  const { currentCurveIndex, momentum, currentTileId } =
+    s.semiDynamicObjects[objectId];
   const { curveProgress } = s.dynamicObjects[objectId];
   const currentTile = level.tiles.find(
-    (t): t is TrackTile =>
-      t.id === s.semiDynamicObjects[objectId].currentTileId,
+    (t): t is TrackTile => t.id === currentTileId,
   );
 
   // Type safe bail-out for later, like falling out of level
   if (!currentTile) {
+    console.error('no tile for curve step!!');
     return [curveProgress, new Vector3()];
   }
 
   const currentCurve =
     s.tilesComputed[currentTile.id]?.curves?.[currentCurveIndex];
 
-  const propsoedProgress = clamp(
+  const proposedProgress = clamp(
     curveProgress +
       momentum *
         delta *
@@ -406,19 +430,29 @@ const stepCurveProgress = (
     0,
     1,
   );
-  return [propsoedProgress, currentCurve.getPointAt(propsoedProgress)];
+  if (objectId === PLAYER_ID && s.isPaused) {
+    console.log('stepping player progress', {
+      curveProgress,
+      proposedProgress,
+    });
+  }
+  return [proposedProgress, currentCurve.getPointAt(proposedProgress)];
 };
 
 const processObjectCollision = (
+  // Game state
   s: GameState,
   level: Level,
-  objectId: string,
-  proposedProgress: number,
-  collisionId: string,
-  proposedOtherProgress: number,
   snappedCollisions: Set<string>,
   collisionTileOverflows: Record<string, number>,
   playSfx: Record<string, () => void>,
+  // Self
+  objectId: string,
+  proposedProgress: number,
+  // Other objects
+  collisionId: string,
+  proposedOtherProgress: number,
+  proposedOtherPosition: Vector3,
 ) => {
   const currentTileId = s.semiDynamicObjects[objectId].currentTileId;
 
@@ -426,8 +460,7 @@ const processObjectCollision = (
     (t): t is TrackTile => t.id === currentTileId,
   );
 
-  const { currentCurveIndex, enteredFrom, nextConnection, momentum } =
-    s.semiDynamicObjects[objectId];
+  const selfSemiDynamic = s.semiDynamicObjects[objectId];
   const OBJECT_SPEED =
     objectId === PLAYER_ID
       ? PLAYER_SPEED
@@ -443,7 +476,9 @@ const processObjectCollision = (
   }
 
   const currentCurve =
-    s.tilesComputed[currentTile.id]?.curves?.[currentCurveIndex];
+    s.tilesComputed[currentTile.id]?.curves?.[
+      selfSemiDynamic.currentCurveIndex
+    ];
 
   // If the player collides with a friend, we want to get rules like "do we
   // bounce off or stop" from the friend. If we *are* a friend and we hit
@@ -453,7 +488,7 @@ const processObjectCollision = (
       t.id === (objectId === PLAYER_ID ? collisionId : objectId),
   );
   if (selfFriendOrOtherFriend) {
-    const otherPos = s.dynamicObjects[collisionId].position;
+    // const otherPos = s.dynamicObjects[collisionId].position;
 
     const otherSemiDynamic = s.semiDynamicObjects[collisionId];
     // const otherDynamic = s.dynamicObjects[collisionId];
@@ -461,20 +496,20 @@ const processObjectCollision = (
       (t) => t.id === otherSemiDynamic.currentTileId,
     );
 
-    const point = currentCurve.getPointAt(proposedProgress);
+    const currentPosition = currentCurve.getPointAt(proposedProgress);
 
     // This function does the heavy lifting of determing where on the curve
     // to snap us ot after a collision, and also what direction along the
     // curve the colliding object is at
     const [newProgress, directionToFriend] = snapCollision(
       // Current object
-      point.toArray(),
+      currentPosition,
       proposedProgress,
       currentTile,
       currentCurve,
       SPHERE_RADIUS,
       // Other object
-      otherPos,
+      proposedOtherPosition,
       proposedOtherProgress,
       otherTile!,
       s.tilesComputed[otherSemiDynamic.currentTileId!]?.curves[
@@ -482,27 +517,33 @@ const processObjectCollision = (
       ],
       SPHERE_RADIUS,
     );
-    if (s.isPaused) {
-      console.log('result of snepPep() from', { proposedProgress }, 'to', {
-        newProgress,
-      });
-    }
+    // if (s.isPaused) {
+    console.log('result of snepPep()', { objectId, proposedProgress }, 'to', {
+      newProgress,
+      proposedOtherProgress,
+    });
+    // }
 
-    if (momentum !== 0 && !snappedCollisions.has(objectId)) {
-      console.log('snapping to collision', objectId);
+    // If one is stopped, the other stops, and we bounce away
+    // If both are moving towards each other, they bounce away
+
+    // We always want to update to the snap position (I think)
+    s.setCurveProgress(objectId, newProgress);
+    s.setPosition(objectId, currentCurve.getPointAt(newProgress).toArray());
+
+    if (selfSemiDynamic.momentum !== 0 && !snappedCollisions.has(objectId)) {
       // Collision possible result: We snapped to a curve percent on the same
       // tile, aka we did not get bumped to a new tile.
       if (newProgress >= 0 && newProgress <= 1) {
         s.setMomentum(objectId, 0);
-        s.setPosition(objectId, point.toArray());
-
-        s.setCurveProgress(objectId, newProgress);
+        // s.setCurveProgress(objectId, newProgress);
+        // s.setPosition(objectId, currentCurve.getPointAt(newProgress).toArray());
 
         // Collision possible result: If the progress on this curve we got
         // snapped to is out of bounds for this curve, calculate some
         // information to pass on later in the loop for resolving the tile
       } else {
-        s.setCurveProgress(objectId, newProgress);
+        // s.setCurveProgress(objectId, newProgress);
         s.setMomentum(objectId, newProgress > 1 ? -OBJECT_SPEED : OBJECT_SPEED);
         // Next progress is the amount into the next tile to go - BUT we
         // don't know the next tile yet! Setting nextDistance is handled by
@@ -521,16 +562,19 @@ const processObjectCollision = (
     playSfx['metalHit2']();
 
     // If we should stop and we are moving
-    if (selfFriendOrOtherFriend.hitBehavior === 'stop' && momentum !== 0) {
+    if (
+      selfFriendOrOtherFriend.hitBehavior === 'stop' &&
+      selfSemiDynamic.momentum !== 0
+    ) {
       s.setMomentum(objectId, 0);
       // Only player has directional arrows
       if (objectId === PLAYER_ID) {
-        const ef = getEnteredFrom(s, currentTile, enteredFrom);
+        const ef = getEnteredFrom(s, currentTile, selfSemiDynamic.enteredFrom);
         // Edge case: at the start of the game, there is no tile entrance
         // we came from!
         if (ef) {
           s.setBonkBackTo({
-            nextDirection: momentum < 0 ? 1 : -1,
+            nextDirection: selfSemiDynamic.momentum < 0 ? 1 : -1,
             lastExit: ef.toArray(),
           });
         } else {
@@ -551,8 +595,8 @@ const processObjectCollision = (
         // Bounce away from friend, regardless of current direction
         directionToFriend > 0 ? -OBJECT_SPEED : OBJECT_SPEED,
       );
-      s.setEnteredFrom(objectId, nextConnection!);
-      s.setNextConnection(objectId, enteredFrom);
+      s.setEnteredFrom(objectId, selfSemiDynamic.nextConnection!);
+      s.setNextConnection(objectId, selfSemiDynamic.enteredFrom);
     }
   }
 
@@ -602,67 +646,6 @@ const stepGameObject = (
   // debug.style.left = `${tileScreen.x}px`;
   // debug.style.top = `${tileScreen.y}px`;
 
-  const entranceDistances = arrowPositions[objectId].map(
-    (position, entrance) => {
-      // const viewport = getCurrentViewport();
-      const screen = toScreen(position, camera, {
-        width: window.innerWidth,
-        height: window.innerHeight,
-      });
-      // Create vector pointing from marble to entrance
-      const v = new Vector2(screen.x - tileScreen.x, screen.y - tileScreen.y);
-      // let debug = document.getElementById(`debug${entrance}`);
-      // if (!debug) {
-      //   debug = document.createElement('div');
-      //   debug.id = `debug${entrance}`;
-      //   debug.style.position = 'absolute';
-      //   debug.style.width = '7px';
-      //   debug.style.height = '7px';
-      //   debug.style.background = ['red', 'green', 'blue'][entrance];
-      //   debug.style.zIndex = '1000';
-      //   document.body.appendChild(debug);
-      // }
-      // debug.style.left = `${screen.x}px`;
-      // debug.style.top = `${screen.y}px`;
-      return {
-        entrance,
-        position,
-        left: screenLeft.angleTo(v),
-        right: screenRight.angleTo(v),
-        up: screenUp.angleTo(v),
-        down: screenDown.angleTo(v),
-      };
-    },
-  );
-
-  const seen = new Set<string>();
-  const arrowsForEntrances = entranceDistances.reduce((acc, d, i) => {
-    // Figure out which cardinal direction this is most pointing
-    const arrow = lowest(d);
-    // Only one entrance per cardinal direction!
-    if (!seen.has(arrow)) {
-      seen.add(arrow);
-      return acc.concat({
-        position: d.position,
-        entrance: d.entrance,
-        arrow: lowest(d),
-      });
-    }
-    return acc;
-  }, [] as ScreenArrows);
-
-  if (objectId === PLAYER_ID) {
-    s.setScreenArrows(arrowsForEntrances);
-  }
-
-  const directions = arrowsForEntrances.reduce(
-    (acc, arrow) => {
-      acc[arrow.arrow] = arrow;
-      return acc;
-    },
-    {} as Record<string, ScreenArrow>,
-  );
-
   const { currentCurveIndex, enteredFrom, nextConnection, momentum } =
     s.semiDynamicObjects[objectId];
   const OBJECT_SPEED =
@@ -673,11 +656,75 @@ const stepGameObject = (
 
   let progress = curveProgress;
   let point = new Vector3(...position);
-  const isPositive = momentum >= 0;
+  // const isPositive = momentum >= 0
+  const isPositive = momentum > 0;
+  const isNegative = momentum < 0;
 
   // Type safe bail-out for later, like falling out of level
   if (!currentTile) {
     return;
+  }
+
+  let directions: Record<string, ScreenArrow> = {};
+  if (objectId === PLAYER_ID && momentum === 0) {
+    const entranceDistances = arrowPositions[objectId].map(
+      (position, entrance) => {
+        // const viewport = getCurrentViewport();
+        const screen = toScreen(position, camera, {
+          width: window.innerWidth,
+          height: window.innerHeight,
+        });
+        // Create vector pointing from marble to entrance
+        const v = new Vector2(screen.x - tileScreen.x, screen.y - tileScreen.y);
+        // let debug = document.getElementById(`debug${entrance}`);
+        // if (!debug) {
+        //   debug = document.createElement('div');
+        //   debug.id = `debug${entrance}`;
+        //   debug.style.position = 'absolute';
+        //   debug.style.width = '7px';
+        //   debug.style.height = '7px';
+        //   debug.style.background = ['red', 'green', 'blue'][entrance];
+        //   debug.style.zIndex = '1000';
+        //   document.body.appendChild(debug);
+        // }
+        // debug.style.left = `${screen.x}px`;
+        // debug.style.top = `${screen.y}px`;
+        return {
+          entrance,
+          position,
+          left: screenLeft.angleTo(v),
+          right: screenRight.angleTo(v),
+          up: screenUp.angleTo(v),
+          down: screenDown.angleTo(v),
+        };
+      },
+    );
+
+    const seen = new Set<string>();
+    const arrowsForEntrances = entranceDistances.reduce((acc, d, i) => {
+      // Figure out which cardinal direction this is most pointing
+      const arrow = lowest(d);
+      // Only one entrance per cardinal direction!
+      if (!seen.has(arrow)) {
+        seen.add(arrow);
+        return acc.concat({
+          position: d.position,
+          entrance: d.entrance,
+          arrow: lowest(d),
+        });
+      }
+      return acc;
+    }, [] as ScreenArrows);
+
+    s.setScreenArrows(arrowsForEntrances);
+
+    directions = arrowsForEntrances.reduce(
+      (acc, arrow) => {
+        acc[arrow.arrow] = arrow;
+        return acc;
+      },
+      {} as Record<string, ScreenArrow>,
+    );
   }
 
   const currentCurve =
@@ -856,14 +903,16 @@ const stepGameObject = (
         }
       });
 
-    const isDown =
-      objectId === PLAYER_ID && keys.down && directions.down && !s.victory;
-    const isLeft =
-      objectId === PLAYER_ID && keys.left && directions.left && !s.victory;
-    const isRight =
-      objectId === PLAYER_ID && keys.right && directions.right && !s.victory;
-    const isUp =
-      objectId === PLAYER_ID && keys.up && directions.up && !s.victory;
+    let isDown,
+      isLeft,
+      isRight,
+      isUp = false;
+    if (objectId === PLAYER_ID && !s.victory) {
+      isDown = !!(keys.down && directions.down);
+      isLeft = !!(keys.left && directions.left);
+      isRight = !!(keys.right && directions.right);
+      isUp = !!(keys.up && directions.up);
+    }
     const isValidUserChoosenDirection = isDown || isLeft || isRight || isUp;
 
     if (s.bonkBackTo && isValidUserChoosenDirection) {
@@ -882,26 +931,63 @@ const stepGameObject = (
     let nextIdx: number | null | undefined;
     let nextId: string | null | undefined;
     let nextEntrance: number | null | undefined;
-    let nextDistance: number | undefined;
 
-    /**
-     * Tile transition check. If this statement is true, we are the end of this
-     * curve in our direction of travel, and need to figure out what tile to
-     * move to.
-     */
-    if ((progress >= 1.0 && isPositive) || (progress <= 0 && !isPositive)) {
-      // We have landed on the junction in the middle of the T
+    if (momentum === 0 && objectId === PLAYER_ID) {
       if (currentTile.type === 'cap') {
-        // We are leaving
-        if (nextConnection === 0) {
-          nextId = currentTile.connections[0];
-          nextEntrance = currentTile.entrances[0];
-          // Progress is 100% and we went the right way to get out, so get out
-        } else if (isValidUserChoosenDirection) {
+        if (isValidUserChoosenDirection && progress === 1) {
+          // TODO: This branch is not hit. I think it was hit in the past because
+          // the logic check in the previous cdoe was "isPositive = momentum >= 0"
+          // note the >= which caught the 0 case. Now it's not that. Maybe rip
+          // out this directional reaction check from this if statement, which
+          // is meant to handle tile tranistiions, not movement catches. But
+          // I also see the 't' code below makes directional choices, so i'm
+          // not sure
+          console.log('starting to leave cap tile');
           s.setEnteredFrom(objectId, -1);
           s.setNextConnection(objectId, 0);
           s.setMomentum(objectId, -OBJECT_SPEED);
           s.setCurveProgress(objectId, 1.0);
+        }
+      } else if (currentTile.type === 't') {
+        let userChoiceConnection: number | undefined;
+        if (isValidUserChoosenDirection) {
+          userChoiceConnection = isDown
+            ? directions.down.entrance
+            : isLeft
+              ? directions.left.entrance
+              : isRight
+                ? directions.right.entrance
+                : directions.up.entrance;
+        }
+
+        if (userChoiceConnection !== undefined) {
+          // Start from the T junction
+          s.setEnteredFrom(objectId, -1);
+
+          s.setNextConnection(objectId, userChoiceConnection);
+          // We are moving out from T so negative momentum
+          s.setMomentum(objectId, -OBJECT_SPEED);
+          s.setCurrentCurveIndex(objectId, userChoiceConnection);
+          // Start at the far end of the curve!
+          s.setCurveProgress(objectId, 1.0);
+          // We are at the t junction, we came from the bottom, and no keys
+          // were pressed, so stop!
+        }
+      }
+    }
+
+    /**
+     * Automove tile transition check. If this statement is true, we are the end
+     * of this curve in our direction of travel, and need to figure out what
+     * tile to move to.
+     */
+    if ((progress >= 1.0 && isPositive) || (progress <= 0 && isNegative)) {
+      if (currentTile.type === 'cap') {
+        // We hit the exit end of the cap tile, and are moving out of the cap
+        if (nextConnection === 0 && progress === 0) {
+          nextId = currentTile.connections[0];
+          nextEntrance = currentTile.entrances[0];
+          // We are at the dead end, and hit a valid direction to move out
         } else if (currentObject?.type === 'friend') {
           if (currentObject.deadEndBehavior === 'stop' && momentum !== 0) {
             if (momentum !== 0) {
@@ -918,7 +1004,7 @@ const stepGameObject = (
             playSfx['metalHit2']();
           }
           // We hit the center of the cap
-        } else if (momentum !== 0) {
+        } else if (progress === 1 && momentum !== 0) {
           s.setMomentum(objectId, 0);
           playSfx['metalHit']();
           playSfx['metalHit2']();
@@ -927,44 +1013,18 @@ const stepGameObject = (
         // We are going towards, and have landed on, the center
         if (nextConnection === -1) {
           if (objectId === PLAYER_ID) {
-            let userChoiceConnection: number | undefined;
-            if (isValidUserChoosenDirection) {
-              userChoiceConnection = isDown
-                ? directions.down.entrance
-                : isLeft
-                  ? directions.left.entrance
-                  : isRight
-                    ? directions.right.entrance
-                    : directions.up.entrance;
-            }
-
             // auto continue through
             // const noKey = !isDown && !isLeft && !isRight && !isUp;
             // const autoLeft = enteredFrom === 2 && noKey;
             // const autoRight = enteredFrom === 0 && noKey;
             // if (autoLeft || autoRight) {
             //   userChoiceConnection = autoLeft ? 0 : 1;
-            // }
-
-            if (userChoiceConnection !== undefined) {
-              // Start from the T junction
-              s.setEnteredFrom(objectId, -1);
-
-              s.setNextConnection(objectId, userChoiceConnection);
-              // We are moving out from T so negative momentum
-              s.setMomentum(objectId, -OBJECT_SPEED);
-              s.setCurrentCurveIndex(objectId, userChoiceConnection);
-              // Start at the far end of the curve!
-              s.setCurveProgress(objectId, 1.0);
-              // We are at the t junction, we came from the bottom, and no keys
-              // were pressed, so stop!
-            } else if (momentum !== 0) {
-              if (enteredFrom === 1) {
-                playSfx['metalHit']();
-                playSfx['metalHit2']();
-              }
-              s.setMomentum(objectId, 0);
+            // }if (momentum !== 0) {
+            if (enteredFrom === 1) {
+              playSfx['metalHit']();
+              playSfx['metalHit2']();
             }
+            s.setMomentum(objectId, 0);
           } else if (currentObject?.type === 'friend') {
             // We hit the T from the bottom, play a sound
             if (enteredFrom === 1 && momentum !== 0) {
@@ -1025,15 +1085,16 @@ const stepGameObject = (
 
       // If we detected there is somewhere to go...
       if (nextId !== undefined || nextEntrance !== undefined) {
-        if (objectId === PLAYER_ID) {
-          console.log('transition to', {
-            nextId,
-            progress,
-            isPositive,
-            momentum,
-            curveProgress,
-          });
-        }
+        // if (objectId === PLAYER_ID) {
+        console.log('tile transition for', {
+          objectId,
+          nextId,
+          progress,
+          isPositive,
+          momentum,
+          curveProgress,
+        });
+        // }
         if (nextId === null || nextEntrance == null) {
           throw new Error('wtf?');
         } else {
@@ -1049,7 +1110,6 @@ const stepGameObject = (
 
         s.setCurrentTileId(objectId, nextTile.id);
 
-        // ...
         const nextDistance = collisionTileOverflows[objectId];
 
         // If connecting to a striaght tile
@@ -1131,6 +1191,9 @@ const Game = () => {
   const setVictory = useGameStore((state) => state.setVictory);
   const semiDynamicObjects = useGameStore((state) => state.semiDynamicObjects);
 
+  const isPaused = useGameStore((state) => state.isPaused);
+  const setIsPaused = useGameStore((state) => state.setIsPaused);
+
   const [gameObjectsRef, renderBackground] = useBackgroundRender();
 
   // const { getCurrentViewport } = useThree((state) => state.viewport);
@@ -1188,12 +1251,12 @@ const Game = () => {
   const [playMoneySfx] = useSound(moneySfx, { volume: 1 });
   const [playErrorSfx] = useSound(errorSfx, { volume: 1 });
   const [playSuccessSfx] = useSound(successSfx, { volume: 1 });
-  // const [playMetalHitSfx] = useSound(metalSfx, { volume: 0.01 });
-  // const [playMetalHit2Sfx] = useSound(metal2Sfx, { volume: 0.0 });
-  const [playMetalHitSfx] = useSound(metalSfx, { volume: 0.0 });
+  const [playMetalHitSfx] = useSound(metalSfx, { volume: 0.01 });
   const [playMetalHit2Sfx] = useSound(metal2Sfx, { volume: 0.0 });
-  // const [playSpringboardSfx] = useSound(springboardSfx, { volume: 1 });
-  const [playSpringboardSfx] = useSound(springboardSfx, { volume: 0 });
+  // const [playMetalHitSfx] = useSound(metalSfx, { volume: 0.0 });
+  // const [playMetalHit2Sfx] = useSound(metal2Sfx, { volume: 0.0 });
+  const [playSpringboardSfx] = useSound(springboardSfx, { volume: 1 });
+  // const [playSpringboardSfx] = useSound(springboardSfx, { volume: 0 });
   const [playGadget1Sfx] = useSound(gadget1Sfx, { volume: 0.25 });
   const [playGadget2Sfx] = useSound(gadget2Sfx, { volume: 0.25 });
   const [playDoorOpenSfx] = useSound(doorOpen, {
@@ -1262,42 +1325,48 @@ const Game = () => {
     }
   }, [gameStarted, setGameStarted, resetLevel]);
 
+  useKeyPress('p', () => {
+    setIsPaused(!isPaused);
+  });
+
+  const [isFirstPress, endFrameUpdateKeys] = useFrameKeys();
+
   useFrame((state, delta) => {
     renderBackground();
     const st = useGameStore.getState();
-    if (key().p) {
-      st.setIsPaused(!st.isPaused);
-      return;
-    }
+
     if (st.isPaused) {
-      if (!key().s) {
+      if (isFirstPress('s')) {
+        delta = 0.01;
+      } else {
+        endFrameUpdateKeys();
         return;
       }
-      delta = 0.01;
     }
 
     const s = useGameStore.getState();
 
     if (!level || !currentTile) {
+      endFrameUpdateKeys();
       return;
     }
 
     const friends = level.tiles.filter((t) => t.type === 'friend');
 
     // Propose all of the new positions, but don't do anything with them yet
-    const proposedCurveProgresses = friends.reduce<
+    const proposedCurveUpdates = friends.reduce<
       Record<string, [number, Vector3]>
     >(
       (acc, friend) => {
-        acc[friend.id] = stepCurveProgress(delta, level, friend.id, s);
+        acc[friend.id] = stepCurveProgress(s, delta, level, friend.id);
         return acc;
       },
       {
-        [PLAYER_ID]: stepCurveProgress(delta, level, PLAYER_ID, s),
+        [PLAYER_ID]: stepCurveProgress(s, delta, level, PLAYER_ID),
       },
     );
 
-    const propositions = Object.entries(proposedCurveProgresses);
+    const propositions = Object.entries(proposedCurveUpdates);
 
     const collisionTileOverflows: Record<string, number> = {};
     const processedCollisions = new Set<string>();
@@ -1309,16 +1378,24 @@ const Game = () => {
       // If there was a collision, snap the objects away from each other. This
       // function updates the curve progress and position
       if (collisions[objectId]) {
+        // TODO: Bonking does not work
+        console.log('colliding', objectId, proposedCurveUpdates);
+        const [otherProgress, otherPosition] =
+          proposedCurveUpdates[collisions[objectId]];
         processObjectCollision(
+          // game state
           s,
           level,
-          objectId,
-          proposedProgress,
-          collisions[objectId],
-          proposedCurveProgresses[objectId][0],
           processedCollisions,
           collisionTileOverflows,
           sfx,
+          // self
+          objectId,
+          proposedProgress,
+          // other object
+          collisions[objectId],
+          otherProgress,
+          otherPosition,
         );
         // If there was no collision we are safe to commit the position
       } else {
@@ -1368,6 +1445,8 @@ const Game = () => {
       playArcadeWinSfx();
       setVictory(true);
     }
+
+    endFrameUpdateKeys();
   });
 
   return (
@@ -1587,6 +1666,7 @@ export default function ThreeScene({ dbLevels }: GameProps) {
   const setVictory = useGameStore((state) => state.setVictory);
   const setCurrentLevelId = useGameStore((state) => state.setCurrentLevelId);
   const resetLevel = useGameStore((state) => state.resetLevel);
+  const isPaused = useGameStore((state) => state.isPaused);
 
   const [fetched, setHasFetched] = useState(false);
 
@@ -1651,6 +1731,7 @@ export default function ThreeScene({ dbLevels }: GameProps) {
         ]}
       >
         <EditorUI enabled={isEditing}>
+          {isPaused && <Modal>Game paused</Modal>}
           {!isEditing && victory && (
             <div className="absolute inset-0 bg-gray-900 bg-opacity-25 flex items-center justify-center z-20">
               <div className="bg-slate-900 p-6 rounded-xl drop-shadow-[0_0_25px_5px_rgba(0,0,0,1)] text-center">

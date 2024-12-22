@@ -2,6 +2,8 @@ import { computeTrackTile } from '@/util/curves';
 import { calculateExitBuddies, deg2Rad, TileExit } from '@/util/math';
 import { post } from '@/util/network';
 import { Level as DbLevel } from '@prisma/client';
+import { useKeyboardControls } from '@react-three/drei';
+import { use, useCallback, useEffect, useRef } from 'react';
 import { CubicBezierCurve3, Euler, Vector3 } from 'three';
 import { create } from 'zustand';
 
@@ -203,6 +205,13 @@ export interface GameState {
   debug: boolean;
   toggleDebug: () => void;
 
+  keys: Record<string, { isFirstPress: boolean; isKeyUp: boolean }>;
+  setKey: (
+    key: string,
+    value: { isFirstPress: boolean; isKeyUp: boolean },
+  ) => void;
+  unsetKey: (key: string) => void;
+
   levels: Level[];
   setLevelsFromDb: (levels: DbLevel[]) => void;
   createLevel: (level: Omit<Level, 'id'>) => Promise<void>;
@@ -325,6 +334,16 @@ export interface GameState {
 export const useGameStore = create<GameState>((set, get) => ({
   debug: false,
   toggleDebug: () => set((state) => ({ debug: !state.debug })),
+
+  keys: {},
+  setKey: (key, value) =>
+    set((state) => ({ keys: { ...state.keys, [key]: value } })),
+  unsetKey: (key) =>
+    set((state) => {
+      const keys = { ...state.keys };
+      delete keys[key];
+      return { keys };
+    }),
 
   levels: [],
   setLevelsFromDb: (dbLevels) =>
@@ -573,25 +592,37 @@ export const useGameStore = create<GameState>((set, get) => ({
       };
     }),
   setMomentum: (objectId, momentum) =>
-    set((state) => ({
-      semiDynamicObjects: {
-        ...state.semiDynamicObjects,
-        [objectId]: {
-          ...state.semiDynamicObjects[objectId],
-          momentum,
+    set((state) => {
+      if (objectId === PLAYER_ID) {
+        console.log('setting momentum to ', { momentum });
+        console.trace();
+      }
+      return {
+        semiDynamicObjects: {
+          ...state.semiDynamicObjects,
+          [objectId]: {
+            ...state.semiDynamicObjects[objectId],
+            momentum,
+          },
         },
-      },
-    })),
+      };
+    }),
   setCurveProgress: (objectId, curveProgress) =>
-    set((state) => ({
-      dynamicObjects: {
-        ...state.dynamicObjects,
-        [objectId]: {
-          ...state.dynamicObjects[objectId],
-          curveProgress,
+    set((state) => {
+      // if (objectId === PLAYER_ID) {
+      //   console.log('setting player progress to ', { curveProgress });
+      //   console.trace();
+      // }
+      return {
+        dynamicObjects: {
+          ...state.dynamicObjects,
+          [objectId]: {
+            ...state.dynamicObjects[objectId],
+            curveProgress,
+          },
         },
-      },
-    })),
+      };
+    }),
   setCurrentTileId: (objectId, currentTileId) =>
     set((state) => ({
       semiDynamicObjects: {
@@ -613,15 +644,21 @@ export const useGameStore = create<GameState>((set, get) => ({
       },
     })),
   setNextConnection: (objectId, nextConnection) =>
-    set((state) => ({
-      semiDynamicObjects: {
-        ...state.semiDynamicObjects,
-        [objectId]: {
-          ...state.semiDynamicObjects[objectId],
-          nextConnection,
+    set((state) => {
+      if (objectId === PLAYER_ID) {
+        console.log('setting player nextconnection to', nextConnection);
+        console.trace();
+      }
+      return {
+        semiDynamicObjects: {
+          ...state.semiDynamicObjects,
+          [objectId]: {
+            ...state.semiDynamicObjects[objectId],
+            nextConnection,
+          },
         },
-      },
-    })),
+      };
+    }),
   setPosition: (objectId, position) =>
     set((state) => ({
       dynamicObjects: {
@@ -924,7 +961,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         [PLAYER_ID]: {
           ...consSemiDynamicState(),
           enteredFrom: startingTile?.type === 't' ? -1 : 0,
-          nextConnection: -1,
+          nextConnection: startingTile?.type === 't' ? 1 : 0,
           currentTileId: startingTile?.id || null,
         },
         ...friends.reduce((acc, t) => {
@@ -963,6 +1000,14 @@ export const useGameStore = create<GameState>((set, get) => ({
               ? tilesComputed[startTile.id].curves[0].getPointAt(curveProgress)
               : [0, 0, 0]
           ) as [number, number, number];
+
+          if (t.id === '65_356') {
+            console.log('Resetting friend 65_356', {
+              startTile,
+              curveProgress,
+              position,
+            });
+          }
 
           return {
             ...acc,
@@ -1015,4 +1060,26 @@ export const deserializeLevel = (level: DbLevel): Level => {
     })),
     startingTileId: data.startingTileId,
   };
+};
+
+/**
+ * Helper for tracking key presses in the frame loop
+ */
+export const useFrameKeys = () => {
+  const [, key] = useKeyboardControls();
+  const keys = useRef<Set<string>>(new Set());
+  const isFirstPress = useCallback(
+    (k: string) => {
+      return key()[k] && !keys.current.has(k);
+    },
+    [keys, key],
+  );
+
+  // Must be called to reset key state inside of your useFrame()
+  const endFrameUpdateKeys = useCallback(() => {
+    const down = key();
+    keys.current = new Set(...Object.keys(down).filter((k) => down[k]));
+  }, [keys, key]);
+
+  return [isFirstPress, endFrameUpdateKeys] as const;
 };
