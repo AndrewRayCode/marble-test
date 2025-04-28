@@ -1,7 +1,7 @@
 'use client';
 
 import { Html } from '@react-three/drei';
-import { useLayoutEffect, useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import cx from 'classnames';
 
 import { PLAYER_ID, TrackTile, useGameStore } from '@/store/gameStore';
@@ -59,7 +59,7 @@ const OnScreenArrows = () => {
     [tilesComputed, currentTile, bonkBackTo],
   );
 
-  useLayoutEffect(
+  useEffect(
     () =>
       // These need to update every frame, but we can't set state per frame,
       // nor do we want this component to render every frame, so subscribe to
